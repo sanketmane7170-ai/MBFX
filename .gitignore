@@ -1,0 +1,42 @@
+# ---- Secrets & credentials (NEVER commit) ----
+.env
+.env.*
+!.env.example
+Server/
+**/cred.md
+*.pem
+*.key
+
+# ---- Node ----
+node_modules/
+dist/
+build/
+coverage/
+*.log
+npm-debug.log*
+pnpm-debug.log*
+.pnpm-store/
+
+# ---- Prisma ----
+prisma/*.db
+
+# ---- Editor / OS ----
+.DS_Store
+.vscode/
+.idea/
+Thumbs.db
+
+# ---- Legacy Visual Studio (old cloned repo) ----
+.vs/
+obj/
+bin/
+
+# Documentation
+docs/
+
+# Server
+Server/
+
+# Markdown files
+LoginPage.md
+frontPage.md

@@ -1,0 +1,224 @@
+import { useEffect, useRef, useState, type ReactNode } from 'react';
+import { NavLink, Outlet, useNavigate } from 'react-router-dom';
+import {
+  Activity,
+  ChevronDown,
+  LayoutDashboard,
+  LogOut,
+  Menu,
+  Settings,
+  ShieldCheck,
+  SlidersHorizontal,
+  X,
+} from 'lucide-react';
+import { cn } from '@/lib/utils';
+import { getUser, logout, logoutServer } from '@/lib/api';
+import { ToastProvider } from '@/components/ui/toast';
+import { Avatar } from '@/components/ui/misc';
+
+export function PageHeader({
+  title,
+  subtitle,
+  actions,
+}: {
+  title: string;
+  subtitle?: string;
+  actions?: ReactNode;
+}) {
+  return (
+    <div className="mb-6 flex flex-wrap items-end justify-between gap-3">
+      <div>
+        <h1 className="text-2xl font-bold tracking-tight text-gray-900">{title}</h1>
+        {subtitle && <p className="mt-1 text-sm text-gray-500">{subtitle}</p>}
+      </div>
+      {actions}
+    </div>
+  );
+}
+
+interface NavItem {
+  to: string;
+  label: string;
+  icon: typeof LayoutDashboard;
+  end?: boolean;
+}
+
+function UserMenu() {
+  const user = getUser();
+  const navigate = useNavigate();
+  const [open, setOpen] = useState(false);
+  const ref = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    const onClick = (e: MouseEvent) => {
+      if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false);
+    };
+    document.addEventListener('mousedown', onClick);
+    return () => document.removeEventListener('mousedown', onClick);
+  }, []);
+
+  const onLogout = async () => {
+    await logoutServer();
+    logout();
+    navigate('/login');
+  };
+
+  return (
+    <div className="relative" ref={ref}>
+      <button
+        onClick={() => setOpen((v) => !v)}
+        className="flex items-center gap-2.5 rounded-lg px-2 py-1.5 hover:bg-gray-100"
+      >
+        <Avatar name={user?.email ?? '?'} className="h-9 w-9 text-sm" />
+        <div className="hidden text-left sm:block">
+          <div className="text-sm font-semibold leading-tight text-gray-900">
+            {user?.email?.split('@')[0]}
+          </div>
+          <div className="text-xs leading-tight text-gray-400">
+            {user?.role === 'SUPER_ADMIN' ? 'Super Admin' : 'Admin'}
+          </div>
+        </div>
+        <ChevronDown className="h-4 w-4 text-gray-400" />
+      </button>
+
+      {open && (
+        <div className="absolute right-0 mt-2 w-56 overflow-hidden rounded-xl border border-gray-200 bg-white shadow-lg">
+          <div className="border-b border-gray-100 px-4 py-3">
+            <div className="truncate text-sm font-medium text-gray-800">{user?.email}</div>
+            <div className="text-xs text-brand-600">{user?.role}</div>
+          </div>
+          <button
+            onClick={onLogout}
+            className="flex w-full items-center gap-2 px-4 py-2.5 text-sm text-gray-700 hover:bg-gray-50"
+          >
+            <LogOut className="h-4 w-4" /> Sign out
+          </button>
+        </div>
+      )}
+    </div>
+  );
+}
+
+export default function DashboardLayout() {
+  const user = getUser();
+  const [mobileOpen, setMobileOpen] = useState(false);
+
+  const groups: { label: string; items: NavItem[] }[] = [
+    {
+      label: 'General',
+      items: [
+        { to: '/dashboard', label: 'Dashboard', icon: LayoutDashboard, end: true },
+        { to: '/dashboard/masters', label: 'Account Configuration', icon: SlidersHorizontal },
+      ],
+    },
+    {
+      label: 'Copier',
+      items: [{ to: '/dashboard/monitor', label: 'Live Monitor', icon: Activity }],
+    },
+    ...(user?.role === 'SUPER_ADMIN'
+      ? [
+          {
+            label: 'Administration',
+            items: [
+              { to: '/dashboard/admins', label: 'Admins', icon: ShieldCheck },
+              { to: '/dashboard/settings', label: 'Settings', icon: Settings },
+            ] as NavItem[],
+          },
+        ]
+      : []),
+  ];
+
+  return (
+    <ToastProvider>
+      <div className="min-h-screen bg-slate-50">
+        {/* Sidebar */}
+        <aside
+          className={cn(
+            'fixed inset-y-0 left-0 z-40 flex w-64 flex-col border-r border-gray-200 bg-white transition-transform md:translate-x-0',
+            mobileOpen ? 'translate-x-0' : '-translate-x-full',
+          )}
+        >
+          <div className="flex h-16 items-center justify-between border-b border-gray-100 px-5">
+            <div className="flex items-center gap-2.5">
+              <img src="/logo.png" alt="MoneyBank FX" className="h-9 w-9 object-contain" />
+              <span className="text-[15px] font-bold text-gray-900">MoneyBank FX</span>
+            </div>
+            <button
+              className="text-gray-400 md:hidden"
+              onClick={() => setMobileOpen(false)}
+              aria-label="Close menu"
+            >
+              <X className="h-5 w-5" />
+            </button>
+          </div>
+
+          <nav className="flex-1 space-y-6 overflow-y-auto px-3 py-5">
+            {groups.map((group) => (
+              <div key={group.label}>
+                <div className="px-3 pb-2 text-xs font-semibold uppercase tracking-wider text-gray-400">
+                  {group.label}
+                </div>
+                <div className="space-y-1">
+                  {group.items.map((item) => (
+                    <NavLink
+                      key={item.to}
+                      to={item.to}
+                      end={item.end}
+                      onClick={() => setMobileOpen(false)}
+                      className={({ isActive }) =>
+                        cn(
+                          'flex items-center gap-3 rounded-lg px-3 py-2 text-sm font-medium transition-colors',
+                          isActive
+                            ? 'bg-brand-50 text-brand-700'
+                            : 'text-gray-600 hover:bg-gray-100',
+                        )
+                      }
+                    >
+                      <item.icon className="h-[18px] w-[18px]" />
+                      {item.label}
+                    </NavLink>
+                  ))}
+                </div>
+              </div>
+            ))}
+          </nav>
+
+          <div className="border-t border-gray-100 px-5 py-3 text-xs text-gray-400">
+            MoneyBank FX · v1.0
+          </div>
+        </aside>
+
+        {mobileOpen && (
+          <div
+            className="fixed inset-0 z-30 bg-gray-900/40 md:hidden"
+            onClick={() => setMobileOpen(false)}
+          />
+        )}
+
+        {/* Content */}
+        <div className="md:pl-64">
+          <header className="sticky top-0 z-20 flex h-16 items-center justify-between border-b border-gray-200 bg-white/80 px-4 backdrop-blur sm:px-6">
+            <button
+              onClick={() => setMobileOpen(true)}
+              className="text-gray-600 md:hidden"
+              aria-label="Open menu"
+            >
+              <Menu className="h-5 w-5" />
+            </button>
+            <div className="flex items-center gap-2 md:hidden">
+              <img src="/logo.png" alt="" className="h-7 w-7 object-contain" />
+              <span className="font-bold text-gray-900">MoneyBank FX</span>
+            </div>
+            <div className="ml-auto">
+              <UserMenu />
+            </div>
+          </header>
+
+          <main className="mx-auto max-w-7xl px-4 py-8 sm:px-6">
+            <Outlet />
+          </main>
+        </div>
+      </div>
+    </ToastProvider>
+  );
+}

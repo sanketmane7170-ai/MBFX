@@ -1,0 +1,21 @@
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: tcp-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: tcp
+      POSTGRES_PASSWORD: tcp_dev_password
+      POSTGRES_DB: trade_copier
+    ports:
+      - "5433:5432"
+    volumes:
+      - tcp-pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U tcp -d trade_copier"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+volumes:
+  tcp-pgdata:

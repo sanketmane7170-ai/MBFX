@@ -1,0 +1,22 @@
+{
+  "name": "trade-copier-platform",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Web-based MT4/MT5 master-slave trade copier (MetaApi + CopyFactory)",
+  "engines": {
+    "node": ">=20"
+  },
+  "scripts": {
+    "dev": "pnpm -r --parallel run dev",
+    "db:up": "docker compose up -d postgres",
+    "db:down": "docker compose down",
+    "db:start": "pg_ctl -D /opt/homebrew/var/postgresql@16 -l /tmp/tcp-postgres.log start",
+    "db:stop": "pg_ctl -D /opt/homebrew/var/postgresql@16 stop",
+    "api:dev": "pnpm --filter @tcp/api start:dev",
+    "api:build": "pnpm --filter @tcp/api build",
+    "api:migrate": "pnpm --filter @tcp/api prisma:migrate",
+    "api:seed": "pnpm --filter @tcp/api seed",
+    "web:dev": "pnpm --filter @tcp/web dev",
+    "web:build": "pnpm --filter @tcp/web build"
+  }
+}

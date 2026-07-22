@@ -1,0 +1,226 @@
+// Trade Copier Platform — Prisma schema
+// Phase 1: users (Super Admin / Admin) + audit log.
+// Phase 2 will add MasterAccount, SlaveAccount, CopyEvent, AccountSnapshot.
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum Role {
+  SUPER_ADMIN
+  ADMIN
+}
+
+/// Singleton row (id = "singleton") holding platform-wide config.
+/// The MetaApi token is AES-256-GCM encrypted at rest.
+model PlatformSetting {
+  id                    String   @id @default("singleton")
+  metaapiTokenEncrypted String?
+  metaapiRegion         String   @default("new-york")
+  updatedById           String?
+  updatedAt             DateTime @updatedAt
+
+  @@map("platform_settings")
+}
+
+enum UserStatus {
+  ACTIVE
+  DISABLED
+}
+
+model User {
+  id           String     @id @default(uuid())
+  email        String     @unique
+  passwordHash String
+  role         Role
+  status       UserStatus @default(ACTIVE)
+
+  // Hashed current refresh token (null = logged out). Enables real logout + rotation.
+  hashedRefreshToken String?
+
+  // Self-relation: which Super Admin created this Admin
+  createdById  String?
+  createdBy    User?      @relation("UserCreator", fields: [createdById], references: [id])
+  createdUsers User[]     @relation("UserCreator")
+
+  auditLogs    AuditLog[]
+
+  createdMasters MasterAccount[] @relation("MasterCreator")
+  createdSlaves  SlaveAccount[]  @relation("SlaveCreator")
+
+  createdAt    DateTime   @default(now())
+  updatedAt    DateTime   @updatedAt
+
+  @@map("users")
+}
+
+model AuditLog {
+  id         String   @id @default(uuid())
+  userId     String?
+  user       User?    @relation(fields: [userId], references: [id], onDelete: SetNull)
+  action     String
+  entityType String?
+  entityId   String?
+  meta       Json?
+  ts         DateTime @default(now())
+
+  @@index([userId, ts])
+  @@map("audit_logs")
+}
+
+// ---------------------------------------------------------------------------
+// Phase 2 — Master / Slave accounts (backed by MetaApi + CopyFactory)
+// ---------------------------------------------------------------------------
+
+enum Platform {
+  MT4
+  MT5
+}
+
+enum MasterStatus {
+  PROVISIONING
+  CONNECTED
+  DISCONNECTED
+  ERROR
+}
+
+enum SlaveStatus {
+  PAUSED
+  COPYING
+  CLOSED
+  ERROR
+}
+
+enum SizingMode {
+  FIXED_LOT
+  MULTIPLIER
+  BALANCE_RATIO
+}
+
+model MasterAccount {
+  id                    String       @id @default(uuid())
+  label                 String
+  // MetaApi provisioned account id + its CopyFactory strategy id (the "provider").
+  metaapiAccountId      String
+  copyfactoryStrategyId String
+  // Non-secret connection metadata. The trade password is sent to MetaApi, never stored.
+  login                 String
+  server                String
+  platform              Platform
+  // Broker trade password, AES-256-GCM encrypted at rest.
+  encryptedPassword     String
+  status                MasterStatus @default(PROVISIONING)
+
+  createdById           String
+  createdBy             User         @relation("MasterCreator", fields: [createdById], references: [id])
+  slaves                SlaveAccount[]
+
+  createdAt             DateTime     @default(now())
+  updatedAt             DateTime     @updatedAt
+
+  @@map("master_accounts")
+}
+
+model SlaveAccount {
+  id                      String        @id @default(uuid())
+  masterAccountId         String
+  master                  MasterAccount @relation(fields: [masterAccountId], references: [id], onDelete: Cascade)
+
+  label                   String
+  metaapiAccountId        String
+  copyfactorySubscriberId String
+  login                   String
+  server                  String
+  platform                Platform
+  // Broker trade password, AES-256-GCM encrypted at rest.
+  encryptedPassword       String
+
+  // Per-slave copy rules
+  sizingMode              SizingMode    @default(MULTIPLIER)
+  multiplier              Decimal       @default(1)
+  copySl                  Boolean       @default(true)
+  copyTp                  Boolean       @default(true)
+  reverse                 Boolean       @default(false)
+  symbolMapping           Json?
+  riskLimits              Json?
+  enabled                 Boolean       @default(true)
+  status                  SlaveStatus   @default(PAUSED)
+
+  createdById             String
+  createdBy               User          @relation("SlaveCreator", fields: [createdById], references: [id])
+
+  createdAt               DateTime      @default(now())
+  updatedAt               DateTime      @updatedAt
+
+  @@index([masterAccountId])
+  @@map("slave_accounts")
+}
+
+// ---------------------------------------------------------------------------
+// Phase 3 — Live copy monitoring
+// Plain id columns (no FK) so history survives account deletion (audit trail).
+// ---------------------------------------------------------------------------
+
+enum Side {
+  BUY
+  SELL
+}
+
+enum CopyAction {
+  OPEN
+  CLOSE
+  MODIFY
+}
+
+enum CopyStatus {
+  SUCCESS
+  FAILED
+  FILTERED
+}
+
+enum AccountType {
+  MASTER
+  SLAVE
+}
+
+model CopyEvent {
+  id              String     @id @default(uuid())
+  masterAccountId String
+  slaveAccountId  String
+  masterTicket    String
+  slaveTicket     String?
+  symbol          String
+  side            Side
+  lots            Decimal
+  sl              Decimal?
+  tp              Decimal?
+  action          CopyAction
+  status          CopyStatus @default(SUCCESS)
+  latencyMs       Int?
+  pnl             Decimal?
+  ts              DateTime   @default(now())
+
+  @@index([masterAccountId, ts])
+  @@index([slaveAccountId, ts])
+  @@index([masterTicket])
+  @@map("copy_events")
+}
+
+model AccountSnapshot {
+  id             String      @id @default(uuid())
+  accountId      String
+  accountType    AccountType
+  balance        Decimal
+  equity         Decimal
+  margin         Decimal     @default(0)
+  openPositions  Int         @default(0)
+  ts             DateTime    @default(now())
+
+  @@index([accountId, ts])
+  @@map("account_snapshots")
+}
