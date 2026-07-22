@@ -3,6 +3,7 @@ import { NavLink, Outlet, useNavigate } from 'react-router-dom';
 import {
   Activity,
   ChevronDown,
+  Copy,
   LayoutDashboard,
   LogOut,
   Menu,
@@ -108,12 +109,15 @@ export default function DashboardLayout() {
       label: 'General',
       items: [
         { to: '/dashboard', label: 'Dashboard', icon: LayoutDashboard, end: true },
-        { to: '/dashboard/masters', label: 'Account Configuration', icon: SlidersHorizontal },
+        { to: '/dashboard/accounts', label: 'Accounts', icon: SlidersHorizontal },
       ],
     },
     {
       label: 'Copier',
-      items: [{ to: '/dashboard/monitor', label: 'Live Monitor', icon: Activity }],
+      items: [
+        { to: '/dashboard/copiers', label: 'Copiers', icon: Copy },
+        { to: '/dashboard/monitor', label: 'Live Monitor', icon: Activity },
+      ],
     },
     ...(user?.role === 'SUPER_ADMIN'
       ? [

@@ -12,15 +12,14 @@ import {
 import { Server, Socket } from 'socket.io';
 
 interface SubscribePayload {
-  room: 'master' | 'slave';
+  room: 'config' | 'account';
   id: string;
 }
 
 /**
- * Real-time stream at namespace `/stream`.
- * Auth: the client passes a JWT access token in the handshake (`auth.token`
- * or `?token=`); it's verified on connection. Clients then `subscribe` to a
- * master/slave room and receive `copy_event` / `account_snapshot` messages.
+ * Real-time stream at namespace `/stream`. Clients authenticate with a JWT in
+ * the handshake, then subscribe to a `config` or `account` room to receive
+ * `copy_event` / `account_snapshot` messages.
  */
 @WebSocketGateway({ namespace: '/stream', cors: { origin: true } })
 export class StreamGateway implements OnGatewayConnection {
@@ -40,11 +39,9 @@ export class StreamGateway implements OnGatewayConnection {
         (client.handshake.auth?.token as string | undefined) ??
         (client.handshake.query?.token as string | undefined);
       if (!token) throw new Error('missing token');
-
-      const payload = await this.jwt.verifyAsync(token, {
+      client.data.user = await this.jwt.verifyAsync(token, {
         secret: this.config.getOrThrow<string>('JWT_SECRET'),
       });
-      client.data.user = payload;
     } catch {
       client.emit('unauthorized', { message: 'invalid or missing token' });
       client.disconnect(true);
@@ -73,16 +70,19 @@ export class StreamGateway implements OnGatewayConnection {
     return { unsubscribed: key };
   }
 
-  /** Broadcast a copy event to both the master's and the slave's room. */
-  emitCopyEvent(evt: { masterAccountId: string; slaveAccountId: string }): void {
-    this.server
-      .to(`master:${evt.masterAccountId}`)
-      .to(`slave:${evt.slaveAccountId}`)
-      .emit('copy_event', evt);
+  emitCopyEvent(evt: {
+    copierConfigId: string | null;
+    sourceAccountId: string;
+    receiverAccountId: string;
+  }): void {
+    const emitter = this.server
+      .to(`account:${evt.sourceAccountId}`)
+      .to(`account:${evt.receiverAccountId}`);
+    if (evt.copierConfigId) emitter.to(`config:${evt.copierConfigId}`);
+    emitter.emit('copy_event', evt);
   }
 
-  emitSnapshot(snap: { accountId: string; accountType: string }): void {
-    const room = `${snap.accountType === 'MASTER' ? 'master' : 'slave'}:${snap.accountId}`;
-    this.server.to(room).emit('account_snapshot', snap);
+  emitSnapshot(snap: { accountId: string }): void {
+    this.server.to(`account:${snap.accountId}`).emit('account_snapshot', snap);
   }
 }

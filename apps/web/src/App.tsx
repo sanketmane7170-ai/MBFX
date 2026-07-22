@@ -4,8 +4,9 @@ import LandingPage from './pages/LandingPage';
 import LoginPage from './pages/LoginPage';
 import DashboardLayout from './components/layout/DashboardLayout';
 import OverviewPage from './pages/dashboard/OverviewPage';
-import MastersPage from './pages/dashboard/MastersPage';
-import MasterDetailPage from './pages/dashboard/MasterDetailPage';
+import AccountsPage from './pages/dashboard/AccountsPage';
+import CopiersPage from './pages/dashboard/CopiersPage';
+import CopierDetailPage from './pages/dashboard/CopierDetailPage';
 import MonitorPage from './pages/dashboard/MonitorPage';
 import AdminsPage from './pages/dashboard/AdminsPage';
 import SettingsPage from './pages/dashboard/SettingsPage';
@@ -34,8 +35,9 @@ export default function App() {
           }
         >
           <Route index element={<OverviewPage />} />
-          <Route path="masters" element={<MastersPage />} />
-          <Route path="masters/:id" element={<MasterDetailPage />} />
+          <Route path="accounts" element={<AccountsPage />} />
+          <Route path="copiers" element={<CopiersPage />} />
+          <Route path="copiers/:id" element={<CopierDetailPage />} />
           <Route path="monitor" element={<MonitorPage />} />
           <Route
             path="admins"

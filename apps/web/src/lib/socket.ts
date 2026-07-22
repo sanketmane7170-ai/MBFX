@@ -1,7 +1,7 @@
 import { io, type Socket } from 'socket.io-client';
 import { getToken } from './api';
 
-export type StreamRoom = { room: 'master' | 'slave'; id: string };
+export type StreamRoom = { room: 'config' | 'account'; id: string };
 
 /**
  * Connects to the backend Socket.IO `/stream` namespace through the Vite proxy

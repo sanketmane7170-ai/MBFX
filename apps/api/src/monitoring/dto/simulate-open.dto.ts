@@ -33,5 +33,5 @@ export class SimulateOpenDto {
 
   @IsOptional()
   @IsString()
-  masterTicket?: string;
+  sourceTicket?: string;
 }

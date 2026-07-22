@@ -1,6 +1,5 @@
-// Trade Copier Platform — Prisma schema
-// Phase 1: users (Super Admin / Admin) + audit log.
-// Phase 2 will add MasterAccount, SlaveAccount, CopyEvent, AccountSnapshot.
+// MoneyBank FX — Trade Copier Platform schema
+// Model: flat Accounts + Copier configs (source → receivers), TradersConnect-style.
 
 generator client {
   provider = "prisma-client-js"
@@ -16,8 +15,12 @@ enum Role {
   ADMIN
 }
 
+enum UserStatus {
+  ACTIVE
+  DISABLED
+}
+
 /// Singleton row (id = "singleton") holding platform-wide config.
-/// The MetaApi token is AES-256-GCM encrypted at rest.
 model PlatformSetting {
   id                    String   @id @default("singleton")
   metaapiTokenEncrypted String?
@@ -28,11 +31,6 @@ model PlatformSetting {
   @@map("platform_settings")
 }
 
-enum UserStatus {
-  ACTIVE
-  DISABLED
-}
-
 model User {
   id           String     @id @default(uuid())
   email        String     @unique
@@ -40,18 +38,15 @@ model User {
   role         Role
   status       UserStatus @default(ACTIVE)
 
-  // Hashed current refresh token (null = logged out). Enables real logout + rotation.
   hashedRefreshToken String?
 
-  // Self-relation: which Super Admin created this Admin
   createdById  String?
   createdBy    User?      @relation("UserCreator", fields: [createdById], references: [id])
   createdUsers User[]     @relation("UserCreator")
 
-  auditLogs    AuditLog[]
-
-  createdMasters MasterAccount[] @relation("MasterCreator")
-  createdSlaves  SlaveAccount[]  @relation("SlaveCreator")
+  auditLogs      AuditLog[]
+  createdAccounts Account[]      @relation("AccountCreator")
+  createdCopiers  CopierConfig[] @relation("CopierCreator")
 
   createdAt    DateTime   @default(now())
   updatedAt    DateTime   @updatedAt
@@ -74,7 +69,7 @@ model AuditLog {
 }
 
 // ---------------------------------------------------------------------------
-// Phase 2 — Master / Slave accounts (backed by MetaApi + CopyFactory)
+// Accounts + Copier
 // ---------------------------------------------------------------------------
 
 enum Platform {
@@ -82,17 +77,10 @@ enum Platform {
   MT5
 }
 
-enum MasterStatus {
+enum AccountStatus {
   PROVISIONING
   CONNECTED
   DISCONNECTED
-  ERROR
-}
-
-enum SlaveStatus {
-  PAUSED
-  COPYING
-  CLOSED
   ERROR
 }
 
@@ -102,68 +90,84 @@ enum SizingMode {
   BALANCE_RATIO
 }
 
-model MasterAccount {
+enum ReceiverStatus {
+  ACTIVE
+  PAUSED
+  ERROR
+}
+
+/// A connected MetaTrader account. Can be a source and/or a receiver via copier configs.
+model Account {
+  id                String        @id @default(uuid())
+  label             String
+  metaapiAccountId  String
+  login             String
+  server            String
+  platform          Platform
+  encryptedPassword String
+  status            AccountStatus @default(PROVISIONING)
+
+  createdById       String
+  createdBy         User          @relation("AccountCreator", fields: [createdById], references: [id])
+
+  sourceForConfig       CopierConfig?  @relation("ConfigSource")
+  receiverSubscriptions Subscription[] @relation("ReceiverAccount")
+
+  createdAt         DateTime      @default(now())
+  updatedAt         DateTime      @updatedAt
+
+  @@map("accounts")
+}
+
+/// A copier: one SOURCE account that many RECEIVER accounts copy from.
+/// Maps to a CopyFactory strategy created for the source account.
+model CopierConfig {
   id                    String       @id @default(uuid())
-  label                 String
-  // MetaApi provisioned account id + its CopyFactory strategy id (the "provider").
-  metaapiAccountId      String
+  name                  String
+  sourceAccountId       String       @unique
+  sourceAccount         Account      @relation("ConfigSource", fields: [sourceAccountId], references: [id], onDelete: Cascade)
   copyfactoryStrategyId String
-  // Non-secret connection metadata. The trade password is sent to MetaApi, never stored.
-  login                 String
-  server                String
-  platform              Platform
-  // Broker trade password, AES-256-GCM encrypted at rest.
-  encryptedPassword     String
-  status                MasterStatus @default(PROVISIONING)
+  enabled               Boolean      @default(true)
 
   createdById           String
-  createdBy             User         @relation("MasterCreator", fields: [createdById], references: [id])
-  slaves                SlaveAccount[]
+  createdBy             User         @relation("CopierCreator", fields: [createdById], references: [id])
+
+  subscriptions         Subscription[]
 
   createdAt             DateTime     @default(now())
   updatedAt             DateTime     @updatedAt
 
-  @@map("master_accounts")
+  @@map("copier_configs")
 }
 
-model SlaveAccount {
-  id                      String        @id @default(uuid())
-  masterAccountId         String
-  master                  MasterAccount @relation(fields: [masterAccountId], references: [id], onDelete: Cascade)
-
-  label                   String
-  metaapiAccountId        String
+/// A receiver in a copier config (maps to a CopyFactory subscriber + subscription).
+model Subscription {
+  id                      String         @id @default(uuid())
+  copierConfigId          String
+  copierConfig            CopierConfig   @relation(fields: [copierConfigId], references: [id], onDelete: Cascade)
+  receiverAccountId       String
+  receiverAccount         Account        @relation("ReceiverAccount", fields: [receiverAccountId], references: [id], onDelete: Cascade)
   copyfactorySubscriberId String
-  login                   String
-  server                  String
-  platform                Platform
-  // Broker trade password, AES-256-GCM encrypted at rest.
-  encryptedPassword       String
 
-  // Per-slave copy rules
-  sizingMode              SizingMode    @default(MULTIPLIER)
-  multiplier              Decimal       @default(1)
-  copySl                  Boolean       @default(true)
-  copyTp                  Boolean       @default(true)
-  reverse                 Boolean       @default(false)
-  symbolMapping           Json?
-  riskLimits              Json?
-  enabled                 Boolean       @default(true)
-  status                  SlaveStatus   @default(PAUSED)
+  sizingMode    SizingMode     @default(MULTIPLIER)
+  multiplier    Decimal        @default(1)
+  copySl        Boolean        @default(true)
+  copyTp        Boolean        @default(true)
+  reverse       Boolean        @default(false)
+  symbolMapping Json?
+  enabled       Boolean        @default(true)
+  status        ReceiverStatus @default(ACTIVE)
 
-  createdById             String
-  createdBy               User          @relation("SlaveCreator", fields: [createdById], references: [id])
+  createdAt     DateTime       @default(now())
+  updatedAt     DateTime       @updatedAt
 
-  createdAt               DateTime      @default(now())
-  updatedAt               DateTime      @updatedAt
-
-  @@index([masterAccountId])
-  @@map("slave_accounts")
+  @@unique([copierConfigId, receiverAccountId])
+  @@index([copierConfigId])
+  @@map("subscriptions")
 }
 
 // ---------------------------------------------------------------------------
-// Phase 3 — Live copy monitoring
-// Plain id columns (no FK) so history survives account deletion (audit trail).
+// Monitoring (plain id columns — history survives account/config deletion)
 // ---------------------------------------------------------------------------
 
 enum Side {
@@ -183,43 +187,38 @@ enum CopyStatus {
   FILTERED
 }
 
-enum AccountType {
-  MASTER
-  SLAVE
-}
-
 model CopyEvent {
-  id              String     @id @default(uuid())
-  masterAccountId String
-  slaveAccountId  String
-  masterTicket    String
-  slaveTicket     String?
-  symbol          String
-  side            Side
-  lots            Decimal
-  sl              Decimal?
-  tp              Decimal?
-  action          CopyAction
-  status          CopyStatus @default(SUCCESS)
-  latencyMs       Int?
-  pnl             Decimal?
-  ts              DateTime   @default(now())
+  id                String     @id @default(uuid())
+  copierConfigId    String?
+  sourceAccountId   String
+  receiverAccountId String
+  sourceTicket      String
+  receiverTicket    String?
+  symbol            String
+  side              Side
+  lots              Decimal
+  sl                Decimal?
+  tp                Decimal?
+  action            CopyAction
+  status            CopyStatus @default(SUCCESS)
+  latencyMs         Int?
+  pnl               Decimal?
+  ts                DateTime   @default(now())
 
-  @@index([masterAccountId, ts])
-  @@index([slaveAccountId, ts])
-  @@index([masterTicket])
+  @@index([sourceAccountId, ts])
+  @@index([receiverAccountId, ts])
+  @@index([copierConfigId, ts])
   @@map("copy_events")
 }
 
 model AccountSnapshot {
-  id             String      @id @default(uuid())
-  accountId      String
-  accountType    AccountType
-  balance        Decimal
-  equity         Decimal
-  margin         Decimal     @default(0)
-  openPositions  Int         @default(0)
-  ts             DateTime    @default(now())
+  id            String   @id @default(uuid())
+  accountId     String
+  balance       Decimal
+  equity        Decimal
+  margin        Decimal  @default(0)
+  openPositions Int      @default(0)
+  ts            DateTime @default(now())
 
   @@index([accountId, ts])
   @@map("account_snapshots")

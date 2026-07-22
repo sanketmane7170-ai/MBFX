@@ -8,7 +8,7 @@ import { Badge, Card, EmptyState, LoadingBlock } from '@/components/ui/misc';
 import { useToast } from '@/components/ui/toast';
 import { useAsync } from '@/hooks/useAsync';
 import { connectStream, subscribe } from '@/lib/socket';
-import { mastersApi, monitoringApi, simApi, type CopyEvent } from '@/lib/api';
+import { copierApi, monitoringApi, simApi, type CopyEvent } from '@/lib/api';
 
 function time(ts: string): string {
   return new Date(ts).toLocaleTimeString();
@@ -16,32 +16,30 @@ function time(ts: string): string {
 
 export default function MonitorPage() {
   const toast = useToast();
-  const { data: masters, loading } = useAsync(() => mastersApi.list(), []);
-  const [masterId, setMasterId] = useState('');
+  const { data: copiers, loading } = useAsync(() => copierApi.list(), []);
+  const [configId, setConfigId] = useState('');
   const [events, setEvents] = useState<CopyEvent[]>([]);
   const [connected, setConnected] = useState(false);
   const [lastTicket, setLastTicket] = useState<string | null>(null);
 
-  const masterIdRef = useRef(masterId);
-  masterIdRef.current = masterId;
+  const configIdRef = useRef(configId);
+  configIdRef.current = configId;
   const socketRef = useRef<Socket | null>(null);
 
-  // Default to the first master once loaded.
   useEffect(() => {
-    if (masters && masters.length > 0 && !masterId) setMasterId(masters[0].id);
-  }, [masters, masterId]);
+    if (copiers && copiers.length > 0 && !configId) setConfigId(copiers[0].id);
+  }, [copiers, configId]);
 
-  // Connect the stream once.
   useEffect(() => {
     const socket = connectStream();
     socketRef.current = socket;
     socket.on('connect', () => {
       setConnected(true);
-      if (masterIdRef.current) subscribe(socket, { room: 'master', id: masterIdRef.current });
+      if (configIdRef.current) subscribe(socket, { room: 'config', id: configIdRef.current });
     });
     socket.on('disconnect', () => setConnected(false));
     socket.on('copy_event', (e: CopyEvent) => {
-      if (e.masterAccountId === masterIdRef.current) {
+      if (e.copierConfigId === configIdRef.current) {
         setEvents((prev) => [e, ...prev].slice(0, 100));
       }
     });
@@ -50,31 +48,30 @@ export default function MonitorPage() {
     };
   }, []);
 
-  // On master change: subscribe + load recent history.
   useEffect(() => {
-    if (!masterId) return;
-    if (socketRef.current?.connected) subscribe(socketRef.current, { room: 'master', id: masterId });
+    if (!configId) return;
+    if (socketRef.current?.connected) subscribe(socketRef.current, { room: 'config', id: configId });
     monitoringApi
-      .masterEvents(masterId, 50)
+      .copierEvents(configId, 50)
       .then(setEvents)
       .catch(() => setEvents([]));
-  }, [masterId]);
+  }, [configId]);
 
   const simulateOpen = async () => {
-    if (!masterId) return;
+    if (!configId) return;
     try {
-      const r = await simApi.open(masterId, { symbol: 'EURUSD', side: 'BUY', lots: 1 });
-      setLastTicket(r.masterTicket);
-      toast(`Simulated trade copied to ${r.copiedTo} slave(s)`, 'success');
+      const r = await simApi.open(configId, { symbol: 'EURUSD', side: 'BUY', lots: 1 });
+      setLastTicket(r.sourceTicket);
+      toast(`Simulated trade copied to ${r.copiedTo} receiver(s)`, 'success');
     } catch (e) {
       toast(e instanceof Error ? e.message : 'Simulation failed', 'error');
     }
   };
 
   const simulateClose = async () => {
-    if (!masterId || !lastTicket) return;
+    if (!configId || !lastTicket) return;
     try {
-      const r = await simApi.close(masterId, lastTicket);
+      const r = await simApi.close(configId, lastTicket);
       toast(`Closed ${r.closed} position(s)`, 'success');
       setLastTicket(null);
     } catch (e) {
@@ -100,22 +97,22 @@ export default function MonitorPage() {
         }
       />
 
-      {!masters || masters.length === 0 ? (
+      {!copiers || copiers.length === 0 ? (
         <Card>
           <EmptyState
             icon={<Activity className="h-10 w-10" />}
-            title="No master accounts"
-            description="Add a master account first, then watch its copies stream here."
+            title="No copiers"
+            description="Create a copier first, then watch its copies stream here."
           />
         </Card>
       ) : (
         <>
           <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
             <div className="w-full max-w-xs">
-              <Select value={masterId} onChange={(e) => setMasterId(e.target.value)}>
-                {masters.map((m) => (
-                  <option key={m.id} value={m.id}>
-                    {m.label} · {m.login}
+              <Select value={configId} onChange={(e) => setConfigId(e.target.value)}>
+                {copiers.map((c) => (
+                  <option key={c.id} value={c.id}>
+                    {c.name} · {c.sourceAccount.label}
                   </option>
                 ))}
               </Select>
@@ -139,7 +136,7 @@ export default function MonitorPage() {
               <EmptyState
                 icon={<Activity className="h-10 w-10" />}
                 title="Waiting for copy activity"
-                description="When the master trades, copies appear here in real time. Use “Simulate trade” to try it."
+                description="When the source trades, copies appear here in real time. Use “Simulate trade” to try it."
               />
             ) : (
               <div className="max-h-[560px] overflow-auto">

@@ -5,25 +5,19 @@ import { SimulateCloseDto } from './dto/simulate-close.dto';
 
 /**
  * DEV-ONLY simulation endpoints (authenticated; disabled when METAAPI_TOKEN is set).
- * Drives the copy pipeline without a real broker so monitoring can be verified.
+ * Drives the copy pipeline per copier config without a real broker.
  */
-@Controller('dev/simulate/masters/:masterId')
+@Controller('dev/simulate/copiers/:copierId')
 export class SimulationController {
   constructor(private readonly sim: SimulationService) {}
 
   @Post('open')
-  open(
-    @Param('masterId', ParseUUIDPipe) masterId: string,
-    @Body() dto: SimulateOpenDto,
-  ) {
-    return this.sim.open(masterId, dto);
+  open(@Param('copierId', ParseUUIDPipe) copierId: string, @Body() dto: SimulateOpenDto) {
+    return this.sim.open(copierId, dto);
   }
 
   @Post('close')
-  close(
-    @Param('masterId', ParseUUIDPipe) masterId: string,
-    @Body() dto: SimulateCloseDto,
-  ) {
-    return this.sim.close(masterId, dto.masterTicket);
+  close(@Param('copierId', ParseUUIDPipe) copierId: string, @Body() dto: SimulateCloseDto) {
+    return this.sim.close(copierId, dto.sourceTicket);
   }
 }

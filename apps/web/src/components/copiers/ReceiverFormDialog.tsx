@@ -3,20 +3,18 @@ import { Dialog } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
 import { Field, Input, Select, Switch } from '@/components/ui/form';
 import { useToast } from '@/components/ui/toast';
+import { useAsync } from '@/hooks/useAsync';
 import {
-  slavesApi,
-  type Platform,
+  accountsApi,
+  copierApi,
+  type CopierConfigDetail,
   type SizingMode,
-  type Slave,
+  type Subscription,
   type SymbolMap,
 } from '@/lib/api';
 
 interface FormState {
-  label: string;
-  login: string;
-  password: string;
-  server: string;
-  platform: Platform;
+  receiverAccountId: string;
   sizingMode: SizingMode;
   multiplier: string;
   copySl: boolean;
@@ -26,11 +24,7 @@ interface FormState {
 }
 
 const defaults: FormState = {
-  label: '',
-  login: '',
-  password: '',
-  server: '',
-  platform: 'MT5',
+  receiverAccountId: '',
   sizingMode: 'MULTIPLIER',
   multiplier: '1',
   copySl: true,
@@ -60,21 +54,22 @@ const multiplierLabel: Record<SizingMode, string> = {
   BALANCE_RATIO: 'Multiplier (ignored for balance ratio)',
 };
 
-export function SlaveFormDialog({
+export function ReceiverFormDialog({
   open,
   onClose,
-  masterId,
-  slave,
+  config,
+  subscription,
   onSaved,
 }: {
   open: boolean;
   onClose: () => void;
-  masterId: string;
-  slave?: Slave | null;
+  config: CopierConfigDetail;
+  subscription?: Subscription | null;
   onSaved: () => void;
 }) {
   const toast = useToast();
-  const isEdit = !!slave;
+  const isEdit = !!subscription;
+  const { data: accounts } = useAsync(() => accountsApi.list(), [open]);
   const [form, setForm] = useState<FormState>(defaults);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -82,22 +77,25 @@ export function SlaveFormDialog({
   useEffect(() => {
     if (!open) return;
     setError(null);
-    if (slave) {
+    if (subscription) {
       setForm({
-        ...defaults,
-        label: slave.label,
-        platform: slave.platform,
-        sizingMode: slave.sizingMode,
-        multiplier: String(slave.multiplier),
-        copySl: slave.copySl,
-        copyTp: slave.copyTp,
-        reverse: slave.reverse,
-        mapping: formatMapping(slave.symbolMapping),
+        receiverAccountId: subscription.receiverAccountId,
+        sizingMode: subscription.sizingMode,
+        multiplier: String(subscription.multiplier),
+        copySl: subscription.copySl,
+        copyTp: subscription.copyTp,
+        reverse: subscription.reverse,
+        mapping: formatMapping(subscription.symbolMapping),
       });
     } else {
       setForm(defaults);
     }
-  }, [open, slave]);
+  }, [open, subscription]);
+
+  const usedIds = new Set(config.subscriptions.map((s) => s.receiverAccountId));
+  const available = (accounts ?? []).filter(
+    (a) => a.id !== config.sourceAccountId && !usedIds.has(a.id),
+  );
 
   const set = <K extends keyof FormState>(k: K, v: FormState[K]) =>
     setForm((f) => ({ ...f, [k]: v }));
@@ -105,12 +103,10 @@ export function SlaveFormDialog({
   const submit = async () => {
     setError(null);
     const multiplier = Number(form.multiplier);
-    if (!form.label) return setError('Label is required.');
     if (!Number.isFinite(multiplier) || multiplier <= 0)
       return setError('Multiplier must be a positive number.');
 
     const rules = {
-      label: form.label,
       sizingMode: form.sizingMode,
       multiplier,
       copySl: form.copySl,
@@ -121,25 +117,18 @@ export function SlaveFormDialog({
 
     setLoading(true);
     try {
-      if (isEdit && slave) {
-        await slavesApi.update(slave.id, rules);
-        toast('Slave updated', 'success');
+      if (isEdit && subscription) {
+        await copierApi.updateReceiver(subscription.id, rules);
+        toast('Receiver updated', 'success');
       } else {
-        if (!form.login || !form.password || !form.server)
-          throw new Error('Login, server and password are required.');
-        await slavesApi.create(masterId, {
-          login: form.login,
-          password: form.password,
-          server: form.server,
-          platform: form.platform,
-          ...rules,
-        });
-        toast('Slave account added', 'success');
+        if (!form.receiverAccountId) throw new Error('Select a receiver account.');
+        await copierApi.addReceiver(config.id, form.receiverAccountId, rules);
+        toast('Receiver added', 'success');
       }
       onSaved();
       onClose();
     } catch (e) {
-      setError(e instanceof Error ? e.message : 'Failed to save slave');
+      setError(e instanceof Error ? e.message : 'Failed to save receiver');
     } finally {
       setLoading(false);
     }
@@ -150,48 +139,40 @@ export function SlaveFormDialog({
       open={open}
       onClose={onClose}
       size="lg"
-      title={isEdit ? 'Edit Slave' : 'Add Slave Account'}
-      description={
-        isEdit
-          ? 'Update copy rules for this slave.'
-          : 'Connect a slave and configure how it copies the master.'
-      }
+      title={isEdit ? 'Edit Receiver' : 'Add Receiver'}
+      description={isEdit ? 'Update copy rules for this receiver.' : 'Add an account that copies this source.'}
       footer={
         <>
           <Button variant="secondary" onClick={onClose} disabled={loading}>
             Cancel
           </Button>
           <Button loading={loading} onClick={submit}>
-            {isEdit ? 'Save Changes' : 'Add Slave'}
+            {isEdit ? 'Save Changes' : 'Add Receiver'}
           </Button>
         </>
       }
     >
       <div className="space-y-4">
-        <Field label="Label">
-          <Input value={form.label} onChange={(e) => set('label', e.target.value)} placeholder="e.g. Client 1" />
-        </Field>
-
         {!isEdit && (
-          <>
-            <div className="grid grid-cols-2 gap-4">
-              <Field label="MT Login">
-                <Input value={form.login} onChange={(e) => set('login', e.target.value)} placeholder="e.g. 6001234" />
-              </Field>
-              <Field label="Platform">
-                <Select value={form.platform} onChange={(e) => set('platform', e.target.value as Platform)}>
-                  <option value="MT5">MT5</option>
-                  <option value="MT4">MT4</option>
-                </Select>
-              </Field>
-            </div>
-            <Field label="Broker Server">
-              <Input value={form.server} onChange={(e) => set('server', e.target.value)} placeholder="e.g. Pepperstone-Live" />
-            </Field>
-            <Field label="Trade Password" hint="Encrypted at rest — never stored in plaintext.">
-              <Input type="password" value={form.password} onChange={(e) => set('password', e.target.value)} placeholder="Account password" />
-            </Field>
-          </>
+          <Field label="Receiver account">
+            {available.length === 0 ? (
+              <p className="rounded-lg border border-amber-100 bg-amber-50/60 px-3 py-2 text-sm text-amber-700">
+                No available accounts to add as a receiver.
+              </p>
+            ) : (
+              <Select
+                value={form.receiverAccountId}
+                onChange={(e) => set('receiverAccountId', e.target.value)}
+              >
+                <option value="">Select an account…</option>
+                {available.map((a) => (
+                  <option key={a.id} value={a.id}>
+                    {a.label} · {a.platform} · {a.login}
+                  </option>
+                ))}
+              </Select>
+            )}
+          </Field>
         )}
 
         <div className="rounded-lg border border-gray-100 bg-gray-50/60 p-4">
@@ -215,13 +196,11 @@ export function SlaveFormDialog({
               />
             </Field>
           </div>
-
           <div className="mt-4 space-y-3">
             <ToggleRow label="Copy Stop Loss" checked={form.copySl} onChange={(v) => set('copySl', v)} />
             <ToggleRow label="Copy Take Profit" checked={form.copyTp} onChange={(v) => set('copyTp', v)} />
             <ToggleRow label="Reverse copy (mirror opposite direction)" checked={form.reverse} onChange={(v) => set('reverse', v)} />
           </div>
-
           <div className="mt-4">
             <Field label="Symbol mapping" hint="Comma-separated, e.g. EURUSD=EURUSD.r, GBPUSD=GBPUSD.r">
               <Input value={form.mapping} onChange={(e) => set('mapping', e.target.value)} placeholder="EURUSD=EURUSD.r" />

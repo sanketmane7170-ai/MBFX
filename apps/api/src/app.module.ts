@@ -9,8 +9,8 @@ import { SettingsModule } from './settings/settings.module';
 import { CopierModule } from './copier/copier.module';
 import { AuthModule } from './auth/auth.module';
 import { AdminsModule } from './admins/admins.module';
-import { MastersModule } from './masters/masters.module';
-import { SlavesModule } from './slaves/slaves.module';
+import { AccountsModule } from './accounts/accounts.module';
+import { CopiersModule } from './copiers/copiers.module';
 import { MonitoringModule } from './monitoring/monitoring.module';
 import { SeedModule } from './seed/seed.module';
 import { JwtAuthGuard } from './common/guards/jwt-auth.guard';
@@ -28,8 +28,8 @@ import { RolesGuard } from './common/guards/roles.guard';
     CopierModule,
     AuthModule,
     AdminsModule,
-    MastersModule,
-    SlavesModule,
+    AccountsModule,
+    CopiersModule,
     MonitoringModule,
     SeedModule,
   ],

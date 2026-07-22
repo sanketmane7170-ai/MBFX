@@ -3,11 +3,11 @@ import { Dialog } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
 import { Field, Input, Select } from '@/components/ui/form';
 import { useToast } from '@/components/ui/toast';
-import { mastersApi, type Platform } from '@/lib/api';
+import { accountsApi, type Platform } from '@/lib/api';
 
 const empty = { label: '', login: '', password: '', server: '', platform: 'MT5' as Platform };
 
-export function AddMasterDialog({
+export function AddAccountDialog({
   open,
   onClose,
   onCreated,
@@ -31,13 +31,13 @@ export function AddMasterDialog({
     }
     setLoading(true);
     try {
-      await mastersApi.create(form);
-      toast('Master account added', 'success');
+      await accountsApi.create(form);
+      toast('Account connected', 'success');
       setForm(empty);
       onCreated();
       onClose();
     } catch (e) {
-      setError(e instanceof Error ? e.message : 'Failed to add master');
+      setError(e instanceof Error ? e.message : 'Failed to add account');
     } finally {
       setLoading(false);
     }
@@ -47,34 +47,26 @@ export function AddMasterDialog({
     <Dialog
       open={open}
       onClose={onClose}
-      title="Add Master Account"
-      description="Connect a MetaTrader account to copy trades from."
+      title="Add Account"
+      description="Connect a MetaTrader account. Assign it as a source or receiver in a copier afterwards."
       footer={
         <>
           <Button variant="secondary" onClick={onClose} disabled={loading}>
             Cancel
           </Button>
           <Button loading={loading} onClick={submit}>
-            Add Master
+            Add Account
           </Button>
         </>
       }
     >
       <div className="space-y-4">
-        <Field label="Label">
-          <Input
-            placeholder="e.g. Prop Master A"
-            value={form.label}
-            onChange={(e) => set('label')(e.target.value)}
-          />
+        <Field label="Account name">
+          <Input placeholder="e.g. Sanket Master" value={form.label} onChange={(e) => set('label')(e.target.value)} />
         </Field>
         <div className="grid grid-cols-2 gap-4">
           <Field label="MT Login">
-            <Input
-              placeholder="e.g. 5001234"
-              value={form.login}
-              onChange={(e) => set('login')(e.target.value)}
-            />
+            <Input placeholder="e.g. 5001234" value={form.login} onChange={(e) => set('login')(e.target.value)} />
           </Field>
           <Field label="Platform">
             <Select value={form.platform} onChange={(e) => set('platform')(e.target.value)}>
@@ -84,19 +76,13 @@ export function AddMasterDialog({
           </Field>
         </div>
         <Field label="Broker Server">
-          <Input
-            placeholder="e.g. ICMarkets-Live"
-            value={form.server}
-            onChange={(e) => set('server')(e.target.value)}
-          />
+          <Input placeholder="e.g. ICMarkets-Live" value={form.server} onChange={(e) => set('server')(e.target.value)} />
         </Field>
-        <Field label="Trade Password" hint="Encrypted at rest — never stored in plaintext.">
-          <Input
-            type="password"
-            placeholder="Account password"
-            value={form.password}
-            onChange={(e) => set('password')(e.target.value)}
-          />
+        <Field
+          label="Password"
+          hint="Receivers need the trade (master) password; sources can use investor. Encrypted at rest."
+        >
+          <Input type="password" placeholder="Account password" value={form.password} onChange={(e) => set('password')(e.target.value)} />
         </Field>
         {error && <p className="text-sm text-red-600">{error}</p>}
       </div>

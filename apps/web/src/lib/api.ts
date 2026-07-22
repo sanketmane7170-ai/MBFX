@@ -1,4 +1,4 @@
-// API client for the Trade Copier backend.
+// API client for the MoneyBank FX Trade Copier backend.
 // Requests go through the Vite dev proxy (`/api` → http://localhost:3000).
 
 const API = '/api/v1';
@@ -13,8 +13,8 @@ const USER_KEY = 'tcp.user';
 export type Role = 'SUPER_ADMIN' | 'ADMIN';
 export type UserStatus = 'ACTIVE' | 'DISABLED';
 export type Platform = 'MT4' | 'MT5';
-export type MasterStatus = 'PROVISIONING' | 'CONNECTED' | 'DISCONNECTED' | 'ERROR';
-export type SlaveStatus = 'PAUSED' | 'COPYING' | 'CLOSED' | 'ERROR';
+export type AccountStatus = 'PROVISIONING' | 'CONNECTED' | 'DISCONNECTED' | 'ERROR';
+export type ReceiverStatus = 'ACTIVE' | 'PAUSED' | 'ERROR';
 export type SizingMode = 'FIXED_LOT' | 'MULTIPLIER' | 'BALANCE_RATIO';
 export type Side = 'BUY' | 'SELL';
 export type CopyAction = 'OPEN' | 'CLOSE' | 'MODIFY';
@@ -37,19 +37,28 @@ export interface Admin {
   updatedAt: string;
 }
 
-export interface Master {
+export interface AccountMini {
   id: string;
   label: string;
-  metaapiAccountId: string;
-  copyfactoryStrategyId: string;
   login: string;
   server: string;
   platform: Platform;
-  status: MasterStatus;
+  status: AccountStatus;
+}
+
+export interface Account {
+  id: string;
+  label: string;
+  metaapiAccountId: string;
+  login: string;
+  server: string;
+  platform: Platform;
+  status: AccountStatus;
   createdById: string;
   createdAt: string;
   updatedAt: string;
-  _count: { slaves: number };
+  sourceForConfig: { id: string; name: string } | null;
+  _count: { receiverSubscriptions: number };
 }
 
 export interface SymbolMap {
@@ -57,13 +66,10 @@ export interface SymbolMap {
   to: string;
 }
 
-export interface Slave {
+export interface Subscription {
   id: string;
-  masterAccountId: string;
-  label: string;
-  login: string;
-  server: string;
-  platform: Platform;
+  copierConfigId: string;
+  receiverAccountId: string;
   sizingMode: SizingMode;
   multiplier: string;
   copySl: boolean;
@@ -71,16 +77,35 @@ export interface Slave {
   reverse: boolean;
   symbolMapping: SymbolMap[] | null;
   enabled: boolean;
-  status: SlaveStatus;
+  status: ReceiverStatus;
   createdAt: string;
+  receiverAccount: AccountMini;
+}
+
+export interface CopierConfig {
+  id: string;
+  name: string;
+  sourceAccountId: string;
+  copyfactoryStrategyId: string;
+  enabled: boolean;
+  createdById: string;
+  createdAt: string;
+  updatedAt: string;
+  sourceAccount: AccountMini;
+  _count: { subscriptions: number };
+}
+
+export interface CopierConfigDetail extends CopierConfig {
+  subscriptions: Subscription[];
 }
 
 export interface CopyEvent {
   id: string;
-  masterAccountId: string;
-  slaveAccountId: string;
-  masterTicket: string;
-  slaveTicket: string | null;
+  copierConfigId: string | null;
+  sourceAccountId: string;
+  receiverAccountId: string;
+  sourceTicket: string;
+  receiverTicket: string | null;
   symbol: string;
   side: Side;
   lots: string;
@@ -91,6 +116,14 @@ export interface CopyEvent {
   latencyMs: number | null;
   pnl: string | null;
   ts: string;
+}
+
+export interface MetaApiStatus {
+  configured: boolean;
+  region: string;
+  tokenPreview: string | null;
+  source: 'settings' | 'env' | 'none';
+  updatedAt: string | null;
 }
 
 // ---------------------------------------------------------------------------
@@ -111,11 +144,7 @@ export function logout(): void {
   localStorage.removeItem(REFRESH_KEY);
   localStorage.removeItem(USER_KEY);
 }
-function storeSession(data: {
-  accessToken: string;
-  refreshToken: string;
-  user?: AuthUser;
-}): void {
+function storeSession(data: { accessToken: string; refreshToken: string; user?: AuthUser }): void {
   localStorage.setItem(TOKEN_KEY, data.accessToken);
   localStorage.setItem(REFRESH_KEY, data.refreshToken);
   if (data.user) localStorage.setItem(USER_KEY, JSON.stringify(data.user));
@@ -162,11 +191,7 @@ async function tryRefresh(): Promise<boolean> {
   }
 }
 
-async function apiFetch<T>(
-  path: string,
-  options: RequestInit = {},
-  allowRefresh = true,
-): Promise<T> {
+async function apiFetch<T>(path: string, options: RequestInit = {}, allowRefresh = true): Promise<T> {
   const res = await fetch(`${API}${path}`, {
     ...options,
     headers: {
@@ -207,35 +232,31 @@ export const logoutServer = () =>
   apiFetch<void>('/auth/logout', { method: 'POST' }).catch(() => undefined);
 
 // ---------------------------------------------------------------------------
-// Resources
+// Accounts
 // ---------------------------------------------------------------------------
-export interface CreateMasterInput {
+export interface CreateAccountInput {
   label: string;
   login: string;
   password: string;
   server: string;
   platform: Platform;
 }
-export const mastersApi = {
-  list: () => apiFetch<Master[]>('/masters'),
-  get: (id: string) => apiFetch<Master>(`/masters/${id}`),
-  create: (body: CreateMasterInput) =>
-    apiFetch<Master>('/masters', { method: 'POST', body: JSON.stringify(body) }),
+export const accountsApi = {
+  list: () => apiFetch<Account[]>('/accounts'),
+  get: (id: string) => apiFetch<Account>(`/accounts/${id}`),
+  create: (body: CreateAccountInput) =>
+    apiFetch<Account>('/accounts', { method: 'POST', body: JSON.stringify(body) }),
   rename: (id: string, label: string) =>
-    apiFetch<Master>(`/masters/${id}`, { method: 'PATCH', body: JSON.stringify({ label }) }),
-  connect: (id: string) => apiFetch<Master>(`/masters/${id}/connect`, { method: 'POST' }),
-  disconnect: (id: string) => apiFetch<Master>(`/masters/${id}/disconnect`, { method: 'POST' }),
-  closeAll: (id: string) =>
-    apiFetch<{ closed: number }>(`/masters/${id}/close-all`, { method: 'POST' }),
-  remove: (id: string) => apiFetch<void>(`/masters/${id}`, { method: 'DELETE' }),
+    apiFetch<Account>(`/accounts/${id}`, { method: 'PATCH', body: JSON.stringify({ label }) }),
+  connect: (id: string) => apiFetch<Account>(`/accounts/${id}/connect`, { method: 'POST' }),
+  disconnect: (id: string) => apiFetch<Account>(`/accounts/${id}/disconnect`, { method: 'POST' }),
+  remove: (id: string) => apiFetch<void>(`/accounts/${id}`, { method: 'DELETE' }),
 };
 
-export interface CreateSlaveInput {
-  label: string;
-  login: string;
-  password: string;
-  server: string;
-  platform: Platform;
+// ---------------------------------------------------------------------------
+// Copiers (configs + receivers)
+// ---------------------------------------------------------------------------
+export interface ReceiverRules {
   sizingMode?: SizingMode;
   multiplier?: number;
   copySl?: boolean;
@@ -243,26 +264,37 @@ export interface CreateSlaveInput {
   reverse?: boolean;
   symbolMapping?: SymbolMap[];
 }
-export type UpdateSlaveInput = Partial<
-  Omit<CreateSlaveInput, 'login' | 'password' | 'server' | 'platform'>
-> & { enabled?: boolean };
-
-export const slavesApi = {
-  listForMaster: (masterId: string) =>
-    apiFetch<Slave[]>(`/masters/${masterId}/slaves`),
-  create: (masterId: string, body: CreateSlaveInput) =>
-    apiFetch<Slave>(`/masters/${masterId}/slaves`, {
+export const copierApi = {
+  list: () => apiFetch<CopierConfig[]>('/copiers'),
+  get: (id: string) => apiFetch<CopierConfigDetail>(`/copiers/${id}`),
+  create: (name: string, sourceAccountId: string) =>
+    apiFetch<CopierConfig>('/copiers', {
       method: 'POST',
-      body: JSON.stringify(body),
+      body: JSON.stringify({ name, sourceAccountId }),
     }),
-  get: (id: string) => apiFetch<Slave>(`/slaves/${id}`),
-  update: (id: string, body: UpdateSlaveInput) =>
-    apiFetch<Slave>(`/slaves/${id}`, { method: 'PATCH', body: JSON.stringify(body) }),
-  pause: (id: string) => apiFetch<Slave>(`/slaves/${id}/pause`, { method: 'POST' }),
-  resume: (id: string) => apiFetch<Slave>(`/slaves/${id}/resume`, { method: 'POST' }),
-  remove: (id: string) => apiFetch<void>(`/slaves/${id}`, { method: 'DELETE' }),
+  update: (id: string, body: { name?: string; enabled?: boolean }) =>
+    apiFetch<CopierConfig>(`/copiers/${id}`, { method: 'PATCH', body: JSON.stringify(body) }),
+  remove: (id: string) => apiFetch<void>(`/copiers/${id}`, { method: 'DELETE' }),
+  closeAll: (id: string) =>
+    apiFetch<{ closed: number }>(`/copiers/${id}/close-all`, { method: 'POST' }),
+
+  addReceiver: (configId: string, receiverAccountId: string, rules: ReceiverRules) =>
+    apiFetch<Subscription>(`/copiers/${configId}/receivers`, {
+      method: 'POST',
+      body: JSON.stringify({ receiverAccountId, ...rules }),
+    }),
+  updateReceiver: (subId: string, rules: ReceiverRules & { enabled?: boolean }) =>
+    apiFetch<Subscription>(`/receivers/${subId}`, { method: 'PATCH', body: JSON.stringify(rules) }),
+  pauseReceiver: (subId: string) =>
+    apiFetch<Subscription>(`/receivers/${subId}/pause`, { method: 'POST' }),
+  resumeReceiver: (subId: string) =>
+    apiFetch<Subscription>(`/receivers/${subId}/resume`, { method: 'POST' }),
+  removeReceiver: (subId: string) => apiFetch<void>(`/receivers/${subId}`, { method: 'DELETE' }),
 };
 
+// ---------------------------------------------------------------------------
+// Admins (Super Admin)
+// ---------------------------------------------------------------------------
 export const adminsApi = {
   list: () => apiFetch<Admin[]>('/admins'),
   create: (email: string, password: string) =>
@@ -276,45 +308,37 @@ export const adminsApi = {
     }),
 };
 
+// ---------------------------------------------------------------------------
+// Monitoring
+// ---------------------------------------------------------------------------
 export const monitoringApi = {
-  masterEvents: (id: string, limit = 100) =>
-    apiFetch<CopyEvent[]>(`/masters/${id}/copy-events?limit=${limit}`),
-  slaveEvents: (id: string, limit = 100) =>
-    apiFetch<CopyEvent[]>(`/slaves/${id}/copy-events?limit=${limit}`),
+  copierEvents: (id: string, limit = 100) =>
+    apiFetch<CopyEvent[]>(`/copiers/${id}/copy-events?limit=${limit}`),
+  accountEvents: (id: string, limit = 100) =>
+    apiFetch<CopyEvent[]>(`/accounts/${id}/copy-events?limit=${limit}`),
 };
 
 // Dev-only simulation (disabled server-side when METAAPI_TOKEN is set).
 export const simApi = {
-  open: (masterId: string, body: { symbol?: string; side?: Side; lots?: number; sl?: number; tp?: number }) =>
-    apiFetch<{ masterTicket: string; copiedTo: number }>(
-      `/dev/simulate/masters/${masterId}/open`,
-      { method: 'POST', body: JSON.stringify(body) },
-    ),
-  close: (masterId: string, masterTicket: string) =>
-    apiFetch<{ closed: number }>(`/dev/simulate/masters/${masterId}/close`, {
+  open: (copierId: string, body: { symbol?: string; side?: Side; lots?: number; sl?: number; tp?: number }) =>
+    apiFetch<{ sourceTicket: string; copiedTo: number }>(`/dev/simulate/copiers/${copierId}/open`, {
       method: 'POST',
-      body: JSON.stringify({ masterTicket }),
+      body: JSON.stringify(body),
+    }),
+  close: (copierId: string, sourceTicket: string) =>
+    apiFetch<{ closed: number }>(`/dev/simulate/copiers/${copierId}/close`, {
+      method: 'POST',
+      body: JSON.stringify({ sourceTicket }),
     }),
 };
 
 // ---------------------------------------------------------------------------
 // Settings (Super Admin) — MetaApi token
 // ---------------------------------------------------------------------------
-export interface MetaApiStatus {
-  configured: boolean;
-  region: string;
-  tokenPreview: string | null;
-  source: 'settings' | 'env' | 'none';
-  updatedAt: string | null;
-}
-
 export const settingsApi = {
   status: () => apiFetch<MetaApiStatus>('/settings/metaapi'),
   set: (token: string, region: string) =>
-    apiFetch<MetaApiStatus>('/settings/metaapi', {
-      method: 'PUT',
-      body: JSON.stringify({ token, region }),
-    }),
+    apiFetch<MetaApiStatus>('/settings/metaapi', { method: 'PUT', body: JSON.stringify({ token, region }) }),
   test: (token?: string, region?: string) =>
     apiFetch<{ ok: boolean; message: string; accounts?: number }>('/settings/metaapi/test', {
       method: 'POST',
