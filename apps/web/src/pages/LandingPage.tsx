@@ -8,27 +8,32 @@ import {
   ShieldCheck,
   Activity,
   ArrowRight,
+  Check,
   type LucideIcon,
 } from 'lucide-react';
 import { motion, type Variants } from 'framer-motion';
-import { cn } from '@/lib/utils';
-import { ProgressiveBlur } from '@/components/ui/progressive-blur';
 import { TimelineContent } from '@/components/ui/timeline-animation';
 
 interface Feature {
   name: string;
   desc: string;
   icon: LucideIcon;
-  gradient: string;
 }
 
 const features: Feature[] = [
-  { name: 'Multi-Slave Copy', desc: 'One master → up to 10 slaves', icon: Users, gradient: 'from-blue-500 to-indigo-600' },
-  { name: 'Lot Scaling', desc: 'Fixed · multiplier · balance ratio', icon: Sliders, gradient: 'from-emerald-500 to-teal-600' },
-  { name: 'Symbol Mapping', desc: 'EURUSD ↔ EURUSD.r', icon: Shuffle, gradient: 'from-violet-500 to-purple-600' },
-  { name: 'Reverse Copy', desc: 'Mirror as opposite direction', icon: ArrowLeftRight, gradient: 'from-orange-500 to-red-500' },
-  { name: 'SL / TP Sync', desc: 'Stops & targets mirrored + closed', icon: ShieldCheck, gradient: 'from-cyan-500 to-blue-600' },
-  { name: 'Live Latency', desc: 'Real-time copy log over WebSocket', icon: Activity, gradient: 'from-fuchsia-500 to-pink-600' },
+  { name: 'Multi-slave copy', desc: 'One master account fans out to up to 10 slaves.', icon: Users },
+  { name: 'Lot scaling', desc: 'Fixed lots, multiplier or balance-ratio per slave.', icon: Sliders },
+  { name: 'Symbol mapping', desc: 'Map broker suffixes — EURUSD ↔ EURUSD.r.', icon: Shuffle },
+  { name: 'Reverse copy', desc: 'Mirror every position as the opposite direction.', icon: ArrowLeftRight },
+  { name: 'SL / TP sync', desc: 'Stops and targets mirrored, modified and closed.', icon: ShieldCheck },
+  { name: 'Live latency', desc: 'Real-time copy log streamed over WebSocket.', icon: Activity },
+];
+
+const stats: { value: string; label: string }[] = [
+  { value: '1 → 10', label: 'Slaves per master' },
+  { value: 'MT4 · MT5', label: 'Platforms supported' },
+  { value: 'Real-time', label: 'WebSocket copy log' },
+  { value: 'Full', label: 'Audit trail' },
 ];
 
 const revealVariants: Variants = {
@@ -36,51 +41,63 @@ const revealVariants: Variants = {
     y: 0,
     opacity: 1,
     filter: 'blur(0px)',
-    transition: { delay: i * 0.12, duration: 0.5 },
+    transition: { delay: i * 0.1, duration: 0.5, ease: 'easeOut' },
   }),
-  hidden: { filter: 'blur(10px)', y: -20, opacity: 0 },
+  hidden: { filter: 'blur(8px)', y: 16, opacity: 0 },
 };
+
+/** Illustrative rows for the copy-log preview panel. */
+const copyRows: { symbol: string; side: 'BUY' | 'SELL'; lots: string; slaves: number }[] = [
+  { symbol: 'EURUSD', side: 'BUY', lots: '1.00', slaves: 4 },
+  { symbol: 'XAUUSD', side: 'SELL', lots: '0.50', slaves: 4 },
+  { symbol: 'GBPJPY', side: 'BUY', lots: '0.75', slaves: 3 },
+];
 
 export default function LandingPage() {
   const timelineRef = useRef<HTMLDivElement>(null);
 
   return (
-    <main ref={timelineRef} className="bg-white min-h-screen">
+    <main ref={timelineRef} className="min-h-screen bg-white text-gray-900">
+      {/* subtle top backdrop */}
+      <div className="pointer-events-none absolute inset-x-0 top-0 h-[520px] bg-gradient-to-b from-gray-50 to-white" />
+
       {/* Nav */}
       <TimelineContent
         as="header"
         animationNum={0}
         timelineRef={timelineRef}
         customVariants={revealVariants}
-        className="w-full top-1.5 left-0 z-50 relative md:px-0 px-2 pt-3"
+        className="relative z-50 mx-auto max-w-6xl px-4 pt-5"
       >
-        <div className="2xl:max-w-6xl max-w-5xl p-2 h-full relative mx-auto flex justify-between items-center rounded-lg backdrop-blur-2xl bg-zinc-100/40 border border-zinc-200/60">
-          <Link to="/" className="flex items-center gap-2 px-2">
-            <img src="/logo.png" alt="MoneyBank FX" className="h-9 w-9 object-contain" />
-            <span className="text-lg font-bold text-gray-900">MoneyBank FX</span>
+        <div className="flex items-center justify-between rounded-xl border border-gray-200/80 bg-white/70 px-4 py-2.5 backdrop-blur">
+          <Link to="/" className="flex items-center gap-2.5">
+            <img src="/logo.png" alt="MoneyBank FX" className="h-8 w-8 object-contain" />
+            <span className="text-[15px] font-semibold tracking-tight text-gray-900">MoneyBank FX</span>
           </Link>
           <Link
             to="/login"
-            className="inline-flex items-center gap-2 rounded-md bg-gradient-to-r from-blue-500 to-indigo-600 px-4 py-2 text-sm font-medium text-white hover:from-blue-600 hover:to-indigo-700 transition-colors"
+            className="inline-flex items-center gap-1.5 rounded-lg bg-gray-900 px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-gray-800"
           >
             Sign in <ArrowRight className="h-4 w-4" />
           </Link>
         </div>
       </TimelineContent>
 
-      <div className="pt-20 pb-10 max-w-screen-2xl mx-auto px-4">
-        <article className="w-fit mx-auto 2xl:max-w-5xl xl:max-w-4xl max-w-2xl text-center space-y-6">
+      {/* Hero */}
+      <section className="relative mx-auto max-w-6xl px-4 pb-8 pt-16 sm:pt-24">
+        <div className="mx-auto max-w-3xl text-center">
           <TimelineContent
             as="div"
             animationNum={1}
             timelineRef={timelineRef}
             customVariants={revealVariants}
-            className="flex w-fit mx-auto items-center gap-1 rounded-full bg-blue-600 border-4 border-blue-200 py-0.5 pl-0.5 pr-3 text-xs"
+            className="mx-auto flex w-fit items-center gap-2 rounded-full border border-gray-200 bg-white px-3 py-1 text-xs font-medium text-gray-600 shadow-sm"
           >
-            <div className="rounded-full bg-white px-2 py-1 text-xs text-black font-medium">Live</div>
-            <p className="text-white sm:text-base text-xs inline-block px-1">
-              ⚡ Powered by <span className="font-semibold">MetaApi + CopyFactory</span>
-            </p>
+            <span className="relative flex h-2 w-2">
+              <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-brand-400 opacity-75" />
+              <span className="relative inline-flex h-2 w-2 rounded-full bg-brand-500" />
+            </span>
+            Live · Powered by MetaApi + CopyFactory
           </TimelineContent>
 
           <TimelineContent
@@ -88,17 +105,10 @@ export default function LandingPage() {
             animationNum={2}
             timelineRef={timelineRef}
             customVariants={revealVariants}
-            className="2xl:text-7xl text-gray-900 xl:text-6xl sm:text-5xl text-4xl leading-[100%] font-medium"
+            className="mt-6 text-4xl font-semibold leading-[1.08] tracking-tight text-gray-900 sm:text-5xl xl:text-6xl"
           >
-            Copy Every Trade,{' '}
-            <span className="font-semibold bg-gradient-to-r from-blue-400 to-blue-600 bg-clip-text text-transparent">
-              Across Every Account
-            </span>
-            , In{' '}
-            <span className="font-semibold bg-gradient-to-r from-emerald-500 to-teal-500 bg-clip-text text-transparent">
-              Real Time
-            </span>
-            .
+            Copy every trade, across every account,
+            <br className="hidden sm:block" /> in <span className="text-brand-600">real time</span>.
           </TimelineContent>
 
           <TimelineContent
@@ -106,9 +116,9 @@ export default function LandingPage() {
             animationNum={3}
             timelineRef={timelineRef}
             customVariants={revealVariants}
-            className="lg:text-xl text-gray-600 sm:text-lg text-sm max-w-2xl mx-auto"
+            className="mx-auto mt-5 max-w-2xl text-base leading-relaxed text-gray-600 sm:text-lg"
           >
-            Master-to-slave trade copying for MT4 / MT5 — lot scaling, symbol mapping,
+            Master-to-slave trade copying for MT4 &amp; MT5 — lot scaling, symbol mapping,
             reverse mode and per-slave risk, with a live copy log and full audit trail.
           </TimelineContent>
 
@@ -117,58 +127,165 @@ export default function LandingPage() {
             animationNum={4}
             timelineRef={timelineRef}
             customVariants={revealVariants}
-            className="flex items-center justify-center gap-3 pt-2"
+            className="mt-8 flex flex-wrap items-center justify-center gap-3"
           >
             <Link
               to="/login"
-              className="inline-flex items-center gap-2 rounded-lg bg-gradient-to-r from-blue-500 to-indigo-600 px-6 py-3 text-sm font-medium text-white hover:from-blue-600 hover:to-indigo-700 transition-colors shadow-lg shadow-blue-200"
+              className="inline-flex items-center gap-2 rounded-lg bg-gray-900 px-6 py-3 text-sm font-medium text-white transition-colors hover:bg-gray-800"
             >
-              Open Dashboard <ArrowRight className="h-4 w-4" />
+              Open dashboard <ArrowRight className="h-4 w-4" />
+            </Link>
+            <Link
+              to="/login"
+              className="inline-flex items-center gap-2 rounded-lg border border-gray-200 bg-white px-6 py-3 text-sm font-medium text-gray-700 transition-colors hover:bg-gray-50"
+            >
+              Sign in
             </Link>
           </TimelineContent>
-        </article>
 
-        {/* Feature cards */}
-        <div className="grid md:grid-cols-3 grid-cols-2 gap-6 pt-20 max-w-5xl mx-auto">
+          <TimelineContent
+            as="div"
+            animationNum={5}
+            timelineRef={timelineRef}
+            customVariants={revealVariants}
+            className="mt-5 flex flex-wrap items-center justify-center gap-x-5 gap-y-1.5 text-xs text-gray-500"
+          >
+            {['MT4 & MT5', 'No installs', 'Real-time WebSocket'].map((item) => (
+              <span key={item} className="inline-flex items-center gap-1.5">
+                <Check className="h-3.5 w-3.5 text-brand-500" /> {item}
+              </span>
+            ))}
+          </TimelineContent>
+        </div>
+
+        {/* Product preview — live copy log */}
+        <TimelineContent
+          as="div"
+          animationNum={6}
+          timelineRef={timelineRef}
+          customVariants={revealVariants}
+          className="mx-auto mt-16 max-w-3xl"
+        >
+          <div className="overflow-hidden rounded-2xl border border-gray-200 bg-white shadow-xl shadow-gray-200/50">
+            <div className="flex items-center justify-between border-b border-gray-100 px-4 py-3">
+              <div className="flex items-center gap-2">
+                <span className="h-2.5 w-2.5 rounded-full bg-gray-200" />
+                <span className="h-2.5 w-2.5 rounded-full bg-gray-200" />
+                <span className="h-2.5 w-2.5 rounded-full bg-gray-200" />
+                <span className="ml-2 text-sm font-medium text-gray-700">Live copy log</span>
+              </div>
+              <span className="inline-flex items-center gap-1.5 rounded-full bg-brand-50 px-2.5 py-1 text-xs font-medium text-brand-700">
+                <span className="h-1.5 w-1.5 rounded-full bg-brand-500" /> Streaming
+              </span>
+            </div>
+            <div className="divide-y divide-gray-100">
+              {copyRows.map((row) => (
+                <div key={row.symbol} className="flex items-center gap-3 px-4 py-3.5">
+                  <span
+                    className={
+                      'inline-flex h-7 items-center rounded-md px-2 text-xs font-semibold ' +
+                      (row.side === 'BUY'
+                        ? 'bg-brand-50 text-brand-700'
+                        : 'bg-rose-50 text-rose-600')
+                    }
+                  >
+                    {row.side}
+                  </span>
+                  <span className="font-medium text-gray-900">{row.symbol}</span>
+                  <span className="text-sm text-gray-500">{row.lots} lots</span>
+                  <span className="ml-auto flex items-center gap-1.5 text-sm text-gray-500">
+                    <span className="hidden sm:inline">Copied to</span>
+                    <span className="font-medium text-gray-900">{row.slaves}</span> slaves
+                    <Check className="h-4 w-4 text-brand-500" />
+                  </span>
+                </div>
+              ))}
+            </div>
+          </div>
+        </TimelineContent>
+      </section>
+
+      {/* Stats */}
+      <section className="mx-auto max-w-6xl px-4 py-8">
+        <div className="grid grid-cols-2 gap-px overflow-hidden rounded-2xl border border-gray-200 bg-gray-200 md:grid-cols-4">
+          {stats.map((stat, i) => (
+            <TimelineContent
+              as="div"
+              animationNum={7 + i}
+              timelineRef={timelineRef}
+              key={stat.label}
+              className="bg-white px-5 py-6 text-center"
+            >
+              <div className="text-xl font-semibold tracking-tight text-gray-900">{stat.value}</div>
+              <div className="mt-1 text-xs text-gray-500">{stat.label}</div>
+            </TimelineContent>
+          ))}
+        </div>
+      </section>
+
+      {/* Features */}
+      <section className="mx-auto max-w-6xl px-4 py-12">
+        <div className="mx-auto mb-10 max-w-2xl text-center">
+          <h2 className="text-2xl font-semibold tracking-tight text-gray-900 sm:text-3xl">
+            Everything you need to copy trades
+          </h2>
+          <p className="mt-3 text-gray-600">
+            Precise control over how every position is mirrored — configured per slave, monitored in real time.
+          </p>
+        </div>
+
+        <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
           {features.map((feature, index) => {
             const Icon = feature.icon;
             return (
               <TimelineContent
                 as="div"
-                animationNum={index + 5}
+                animationNum={index + 8}
                 timelineRef={timelineRef}
                 key={feature.name}
-                className="relative aspect-video rounded-xl overflow-hidden shadow-sm"
+                className="group rounded-2xl border border-gray-200 bg-white p-6 transition-all hover:border-gray-300 hover:shadow-md hover:shadow-gray-100"
               >
-                <div className={cn('h-full w-full bg-gradient-to-br', feature.gradient)}>
-                  <div className="absolute top-4 left-4 h-10 w-10 rounded-lg bg-white/20 backdrop-blur grid place-content-center">
-                    <Icon className="h-5 w-5 text-white" />
-                  </div>
+                <div className="flex h-11 w-11 items-center justify-center rounded-xl bg-gray-50 text-gray-700 transition-colors group-hover:bg-brand-50 group-hover:text-brand-600">
+                  <Icon className="h-5 w-5" />
                 </div>
-                <ProgressiveBlur
-                  className="pointer-events-none absolute bottom-0 left-0 h-[40%] w-full"
-                  blurIntensity={0.5}
-                />
-                <div className="absolute bottom-3 left-4 right-4">
-                  <h3 className="2xl:text-xl md:text-lg text-sm font-semibold text-white capitalize">
-                    {feature.name}
-                  </h3>
-                  <p className="text-xs text-white/80">{feature.desc}</p>
-                </div>
+                <h3 className="mt-4 text-base font-semibold text-gray-900">{feature.name}</h3>
+                <p className="mt-1.5 text-sm leading-relaxed text-gray-600">{feature.desc}</p>
               </TimelineContent>
             );
           })}
         </div>
+      </section>
 
-        <motion.p
+      {/* CTA band */}
+      <section className="mx-auto max-w-6xl px-4 pb-16">
+        <div className="flex flex-col items-center gap-5 rounded-2xl border border-gray-200 bg-gray-900 px-6 py-12 text-center">
+          <h2 className="max-w-xl text-2xl font-semibold tracking-tight text-white sm:text-3xl">
+            Ready to mirror your trades across every account?
+          </h2>
+          <Link
+            to="/login"
+            className="inline-flex items-center gap-2 rounded-lg bg-white px-6 py-3 text-sm font-medium text-gray-900 transition-colors hover:bg-gray-100"
+          >
+            Open dashboard <ArrowRight className="h-4 w-4" />
+          </Link>
+        </div>
+      </section>
+
+      {/* Footer */}
+      <footer className="border-t border-gray-100">
+        <motion.div
           initial={{ opacity: 0 }}
           animate={{ opacity: 1 }}
-          transition={{ delay: 1.2 }}
-          className="text-center text-xs text-gray-400 pt-16"
+          transition={{ delay: 0.8 }}
+          className="mx-auto flex max-w-6xl flex-col items-center justify-between gap-3 px-4 py-8 text-sm text-gray-500 sm:flex-row"
         >
-          MoneyBank FX · MT4 / MT5 · v1.0
-        </motion.p>
-      </div>
+          <div className="flex items-center gap-2">
+            <img src="/logo.png" alt="" className="h-6 w-6 object-contain" />
+            <span className="font-medium text-gray-700">MoneyBank FX</span>
+          </div>
+          <span className="text-xs text-gray-400">MT4 / MT5 · v1.0</span>
+        </motion.div>
+      </footer>
     </main>
   );
 }
