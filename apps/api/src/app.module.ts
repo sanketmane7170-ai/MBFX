@@ -6,6 +6,7 @@ import { PrismaModule } from './prisma/prisma.module';
 import { AuditModule } from './common/audit/audit.module';
 import { CryptoModule } from './common/crypto/crypto.module';
 import { SettingsModule } from './settings/settings.module';
+import { MailModule } from './mail/mail.module';
 import { CopierModule } from './copier/copier.module';
 import { AuthModule } from './auth/auth.module';
 import { AdminsModule } from './admins/admins.module';
@@ -25,6 +26,7 @@ import { RolesGuard } from './common/guards/roles.guard';
     AuditModule,
     CryptoModule,
     SettingsModule,
+    MailModule,
     CopierModule,
     AuthModule,
     AdminsModule,

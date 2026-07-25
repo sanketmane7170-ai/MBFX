@@ -126,6 +126,32 @@ export interface MetaApiStatus {
   updatedAt: string | null;
 }
 
+export interface SmtpStatus {
+  configured: boolean;
+  host: string | null;
+  port: number | null;
+  secure: boolean;
+  user: string | null;
+  fromName: string | null;
+  fromEmail: string | null;
+  alertEmail: string | null;
+  alertsEnabled: boolean;
+  source: 'settings' | 'env' | 'none';
+  updatedAt: string | null;
+}
+
+export interface SmtpInput {
+  host: string;
+  port: number;
+  secure: boolean;
+  user: string;
+  password?: string;
+  fromName?: string;
+  fromEmail?: string;
+  alertEmail?: string;
+  alertsEnabled?: boolean;
+}
+
 // ---------------------------------------------------------------------------
 // Token storage
 // ---------------------------------------------------------------------------
@@ -345,4 +371,15 @@ export const settingsApi = {
       body: JSON.stringify({ token, region }),
     }),
   clear: () => apiFetch<MetaApiStatus>('/settings/metaapi', { method: 'DELETE' }),
+
+  // ---- Email / SMTP ----
+  smtpStatus: () => apiFetch<SmtpStatus>('/settings/smtp'),
+  smtpSet: (body: SmtpInput) =>
+    apiFetch<SmtpStatus>('/settings/smtp', { method: 'PUT', body: JSON.stringify(body) }),
+  smtpTest: (body: Partial<SmtpInput> & { to?: string }) =>
+    apiFetch<{ ok: boolean; message: string }>('/settings/smtp/test', {
+      method: 'POST',
+      body: JSON.stringify(body),
+    }),
+  smtpClear: () => apiFetch<SmtpStatus>('/settings/smtp', { method: 'DELETE' }),
 };

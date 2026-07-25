@@ -25,6 +25,19 @@ model PlatformSetting {
   id                    String   @id @default("singleton")
   metaapiTokenEncrypted String?
   metaapiRegion         String   @default("new-york")
+
+  // ---- Email / SMTP (app password encrypted at rest) ----
+  smtpHost              String?
+  smtpPort              Int?
+  smtpSecure            Boolean  @default(false)
+  smtpUser              String?
+  smtpPasswordEncrypted String?
+  smtpFromName          String?
+  smtpFromEmail         String?
+  alertEmail            String?
+  alertsEnabled         Boolean  @default(true)
+  smtpUpdatedAt         DateTime?
+
   updatedById           String?
   updatedAt             DateTime @updatedAt
 
