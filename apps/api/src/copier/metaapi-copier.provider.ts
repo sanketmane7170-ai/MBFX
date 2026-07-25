@@ -27,6 +27,9 @@ import {
 export class MetaApiCopierProvider implements CopierProvider {
   private readonly logger = new Logger(MetaApiCopierProvider.name);
   private clients: { token: string; region: string; metaApi: any; copyFactory: any } | null = null;
+  /** Region-agnostic MetaApi client for operating on already-provisioned accounts
+   *  (which may live in a different region than the configured provisioning one). */
+  private stateApi: { token: string; api: any } | null = null;
   /** Cached RPC connections per MetaApi account id, reused across snapshot polls. */
   private readonly rpc = new Map<string, any>();
 
@@ -53,6 +56,26 @@ export class MetaApiCopierProvider implements CopierProvider {
       copyFactory: new CopyFactory(token, { region }),
     };
     return this.clients;
+  }
+
+  /**
+   * MetaApi client with NO region pin, for reads/ops on existing accounts. The
+   * SDK resolves each account's own region — provisioning pins a region, but an
+   * account may have been created in a different one, so a pinned client throws
+   * "Account … is not on specified region".
+   */
+  private async getStateApi(): Promise<any> {
+    const token = this.settings.getToken();
+    if (!token) {
+      throw new ServiceUnavailableException('MetaApi token is not configured.');
+    }
+    if (this.stateApi && this.stateApi.token === token) return this.stateApi.api;
+    const mod: any = await import('metaapi.cloud-sdk');
+    const MetaApi = mod.default ?? mod;
+    const api = new MetaApi(token);
+    this.stateApi = { token, api };
+    this.rpc.clear(); // connections from an old client are invalid
+    return api;
   }
 
   /** Translate a raw MetaApi/SDK error into a clean 400 with a readable message. */
@@ -209,7 +232,7 @@ export class MetaApiCopierProvider implements CopierProvider {
   }
 
   async closeAll(metaapiAccountId: string): Promise<void> {
-    const { metaApi } = await this.getClients();
+    const metaApi = await this.getStateApi();
     const account = await metaApi.metatraderAccountApi.getAccount(metaapiAccountId);
     const connection = account.getRPCConnection();
     await connection.connect();
@@ -222,7 +245,7 @@ export class MetaApiCopierProvider implements CopierProvider {
   }
 
   async getAccountState(metaapiAccountId: string): Promise<AccountState | null> {
-    const { metaApi } = await this.getClients();
+    const metaApi = await this.getStateApi();
     try {
       let conn = this.rpc.get(metaapiAccountId);
       if (!conn) {
