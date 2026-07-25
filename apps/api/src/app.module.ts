@@ -14,6 +14,7 @@ import { AdminsModule } from './admins/admins.module';
 import { AccountsModule } from './accounts/accounts.module';
 import { CopiersModule } from './copiers/copiers.module';
 import { MonitoringModule } from './monitoring/monitoring.module';
+import { ReportsModule } from './reports/reports.module';
 import { HealthModule } from './health/health.module';
 import { SeedModule } from './seed/seed.module';
 import { JwtAuthGuard } from './common/guards/jwt-auth.guard';
@@ -38,6 +39,7 @@ import { AllExceptionsFilter } from './common/filters/all-exceptions.filter';
     AccountsModule,
     CopiersModule,
     MonitoringModule,
+    ReportsModule,
     HealthModule,
     SeedModule,
   ],

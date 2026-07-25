@@ -1,4 +1,5 @@
 import { useEffect, type ReactNode } from 'react';
+import { createPortal } from 'react-dom';
 import { X } from 'lucide-react';
 import { motion } from 'framer-motion';
 import { cn } from '@/lib/utils';
@@ -26,13 +27,22 @@ export function Dialog({
       if (e.key === 'Escape') onClose();
     };
     window.addEventListener('keydown', onKey);
-    return () => window.removeEventListener('keydown', onKey);
+    // Prevent the page behind the modal from scrolling.
+    const prevOverflow = document.body.style.overflow;
+    document.body.style.overflow = 'hidden';
+    return () => {
+      window.removeEventListener('keydown', onKey);
+      document.body.style.overflow = prevOverflow;
+    };
   }, [open, onClose]);
 
   if (!open) return null;
 
-  return (
-    <div className="fixed inset-0 z-50 overflow-y-auto">
+  // Rendered through a portal: ancestors using backdrop-filter/transform (e.g. the
+  // sticky blurred header) would otherwise become the containing block for our
+  // fixed overlay, clipping it to their box instead of the viewport.
+  return createPortal(
+    <div className="fixed inset-0 z-[100] overflow-y-auto">
       <div className="fixed inset-0 bg-gray-900/40 backdrop-blur-sm" onClick={onClose} />
       {/* Scrollable, centered wrapper — min-h-full keeps it centered but lets tall
           dialogs scroll instead of clipping off the top of the viewport. */}
@@ -65,6 +75,7 @@ export function Dialog({
           )}
         </motion.div>
       </div>
-    </div>
+    </div>,
+    document.body,
   );
 }

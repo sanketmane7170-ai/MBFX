@@ -5,6 +5,8 @@ import { PageHeader } from '@/components/layout/DashboardLayout';
 import { Button } from '@/components/ui/button';
 import { Dialog } from '@/components/ui/dialog';
 import { Field, Input, Switch } from '@/components/ui/form';
+import { Combobox } from '@/components/ui/combobox';
+import { useBrokerServers } from '@/hooks/useBrokerServers';
 import {
   Badge,
   Card,
@@ -44,6 +46,7 @@ export default function AccountsPage() {
   const [editPassword, setEditPassword] = useState('');
   const [saving, setSaving] = useState(false);
   const [q, setQ] = useState('');
+  const serverOpts = useBrokerServers(!!editFor);
 
   useEffect(() => {
     if (editFor) {
@@ -251,8 +254,17 @@ export default function AccountsPage() {
           <Field label="Name">
             <Input value={editLabel} onChange={(e) => setEditLabel(e.target.value)} placeholder="Account label" />
           </Field>
-          <Field label="Broker server">
-            <Input value={editServer} onChange={(e) => setEditServer(e.target.value)} placeholder="e.g. ICMarkets-Live02" />
+          <Field
+            label="Broker server"
+            hint="Start typing to search. Not listed? Type the exact name from your MT terminal."
+          >
+            <Combobox
+              value={editServer}
+              onChange={setEditServer}
+              options={serverOpts.options}
+              loading={serverOpts.loading}
+              placeholder="e.g. ICMarkets-Live02"
+            />
           </Field>
           <Field
             label="Broker password"

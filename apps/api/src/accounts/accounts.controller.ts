@@ -9,6 +9,7 @@ import {
   ParseUUIDPipe,
   Patch,
   Post,
+  Query,
 } from '@nestjs/common';
 import { AuthPayload, CurrentUser } from '../common/decorators/current-user.decorator';
 import { AccountsService } from './accounts.service';
@@ -26,6 +27,12 @@ export class AccountsController {
   @Get()
   findAll(@CurrentUser() actor: AuthPayload) {
     return this.accounts.findAll(actor);
+  }
+
+  // Must precede ':id' so the UUID param doesn't swallow this path.
+  @Get('servers')
+  serverSuggestions(@Query('q') q?: string) {
+    return this.accounts.serverSuggestions(q);
   }
 
   @Get(':id')

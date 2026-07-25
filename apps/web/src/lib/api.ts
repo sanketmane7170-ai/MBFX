@@ -295,6 +295,11 @@ export const accountsApi = {
     apiFetch<Account>(`/accounts/${id}`, { method: 'PATCH', body: JSON.stringify({ label }) }),
   update: (id: string, body: { label?: string; password?: string; server?: string }) =>
     apiFetch<Account>(`/accounts/${id}`, { method: 'PATCH', body: JSON.stringify(body) }),
+  /** Broker-server suggestions (in-use servers + curated list). Free text still allowed. */
+  servers: (q?: string) =>
+    apiFetch<{ server: string; inUse: boolean }[]>(
+      `/accounts/servers${q ? `?q=${encodeURIComponent(q)}` : ''}`,
+    ),
   connect: (id: string) => apiFetch<Account>(`/accounts/${id}/connect`, { method: 'POST' }),
   disconnect: (id: string) => apiFetch<Account>(`/accounts/${id}/disconnect`, { method: 'POST' }),
   remove: (id: string) => apiFetch<void>(`/accounts/${id}`, { method: 'DELETE' }),
@@ -389,6 +394,104 @@ export const monitoringApi = {
     Object.entries(q).forEach(([k, v]) => v != null && v !== '' && p.set(k, String(v)));
     return apiFetch<{ items: CopyEvent[]; total: number }>(`/copy-events?${p.toString()}`);
   },
+};
+
+// ---------------------------------------------------------------------------
+// Reports (FR-20) — money fields arrive as decimal strings, never floats
+// ---------------------------------------------------------------------------
+export type ReportBucket = 'day' | 'week' | 'month';
+
+export interface ReportSummary {
+  trades: number;
+  wins: number;
+  losses: number;
+  breakEven: number;
+  winRate: number;
+  realizedPnl: string;
+  grossProfit: string;
+  grossLoss: string;
+  profitFactor: number | null;
+  avgPnl: string;
+  bestTrade: string | null;
+  worstTrade: string | null;
+  maxDrawdown: string;
+  volumeLots: string;
+  opened: number;
+  closed: number;
+  failed: number;
+  filtered: number;
+  avgLatencyMs: number | null;
+}
+
+export interface ReportPeriod {
+  period: string;
+  start: string;
+  trades: number;
+  wins: number;
+  losses: number;
+  winRate: number;
+  pnl: string;
+  cumulativePnl: string;
+}
+
+export interface ReportSymbol {
+  symbol: string;
+  trades: number;
+  wins: number;
+  winRate: number;
+  pnl: string;
+  volumeLots: string;
+}
+
+export interface ReportRange {
+  from: string | null;
+  to: string | null;
+  bucket: ReportBucket;
+}
+
+export interface AccountReport {
+  account: { id: string; label: string; login: string; platform: Platform };
+  range: ReportRange;
+  summary: ReportSummary;
+  unrealizedPnl: string | null;
+  snapshotAt: string | null;
+  periods: ReportPeriod[];
+  symbols: ReportSymbol[];
+  asSource: { events: number; receivers: number; aggregateReceiverPnl: string } | null;
+}
+
+export interface OverviewReport {
+  range: ReportRange;
+  summary: ReportSummary;
+  periods: ReportPeriod[];
+  symbols: ReportSymbol[];
+  accounts: Array<{
+    accountId: string;
+    label: string;
+    trades: number;
+    wins: number;
+    winRate: number;
+    realizedPnl: string;
+    maxDrawdown: string;
+  }>;
+}
+
+export interface ReportQuery {
+  from?: string;
+  to?: string;
+  bucket?: ReportBucket;
+}
+
+const reportQuery = (q: ReportQuery) => {
+  const p = new URLSearchParams();
+  Object.entries(q).forEach(([k, v]) => v != null && v !== '' && p.set(k, String(v)));
+  return p.toString();
+};
+
+export const reportsApi = {
+  overview: (q: ReportQuery = {}) => apiFetch<OverviewReport>(`/reports/overview?${reportQuery(q)}`),
+  account: (id: string, q: ReportQuery = {}) =>
+    apiFetch<AccountReport>(`/reports/accounts/${id}?${reportQuery(q)}`),
 };
 
 // ---------------------------------------------------------------------------

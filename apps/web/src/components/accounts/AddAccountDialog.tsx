@@ -2,7 +2,9 @@ import { useState } from 'react';
 import { Dialog } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
 import { Field, Input, Select } from '@/components/ui/form';
+import { Combobox } from '@/components/ui/combobox';
 import { useToast } from '@/components/ui/toast';
+import { useBrokerServers } from '@/hooks/useBrokerServers';
 import { accountsApi, type Platform } from '@/lib/api';
 
 const empty = { label: '', login: '', password: '', server: '', platform: 'MT5' as Platform };
@@ -20,6 +22,7 @@ export function AddAccountDialog({
   const [form, setForm] = useState(empty);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const servers = useBrokerServers(open);
 
   const set = (k: keyof typeof form) => (v: string) => setForm((f) => ({ ...f, [k]: v }));
 
@@ -75,8 +78,17 @@ export function AddAccountDialog({
             </Select>
           </Field>
         </div>
-        <Field label="Broker Server">
-          <Input placeholder="e.g. ICMarkets-Live" value={form.server} onChange={(e) => set('server')(e.target.value)} />
+        <Field
+          label="Broker Server"
+          hint="Start typing to search. Not listed? Type the exact name from your MT terminal."
+        >
+          <Combobox
+            value={form.server}
+            onChange={set('server')}
+            options={servers.options}
+            loading={servers.loading}
+            placeholder="e.g. ICMarkets-Live02"
+          />
         </Field>
         <Field
           label="Password"

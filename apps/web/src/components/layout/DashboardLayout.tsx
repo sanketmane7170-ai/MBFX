@@ -2,6 +2,7 @@ import { useEffect, useRef, useState, type ReactNode } from 'react';
 import { NavLink, Outlet, useNavigate } from 'react-router-dom';
 import {
   Activity,
+  BarChart3,
   ChevronDown,
   Copy,
   History,
@@ -158,6 +159,7 @@ export default function DashboardLayout() {
         { to: '/dashboard/copiers', label: 'Copiers', icon: Copy },
         { to: '/dashboard/monitor', label: 'Live Monitor', icon: Activity },
         { to: '/dashboard/history', label: 'Copy History', icon: History },
+        { to: '/dashboard/reports', label: 'Reports', icon: BarChart3 },
       ],
     },
     ...(user?.role === 'SUPER_ADMIN'

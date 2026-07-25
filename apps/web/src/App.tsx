@@ -10,6 +10,7 @@ import CopiersPage from './pages/dashboard/CopiersPage';
 import CopierDetailPage from './pages/dashboard/CopierDetailPage';
 import MonitorPage from './pages/dashboard/MonitorPage';
 import HistoryPage from './pages/dashboard/HistoryPage';
+import ReportsPage from './pages/dashboard/ReportsPage';
 import AdminsPage from './pages/dashboard/AdminsPage';
 import AuditPage from './pages/dashboard/AuditPage';
 import SettingsPage from './pages/dashboard/SettingsPage';
@@ -44,6 +45,7 @@ export default function App() {
           <Route path="copiers/:id" element={<CopierDetailPage />} />
           <Route path="monitor" element={<MonitorPage />} />
           <Route path="history" element={<HistoryPage />} />
+          <Route path="reports" element={<ReportsPage />} />
           <Route
             path="admins"
             element={

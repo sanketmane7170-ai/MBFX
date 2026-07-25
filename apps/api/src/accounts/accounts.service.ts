@@ -13,6 +13,7 @@ import { CryptoService } from '../common/crypto/crypto.service';
 import { Actor, ownedBy } from '../common/scope';
 import { COPIER_PROVIDER, CopierProvider } from '../copier/copier.types';
 import { CreateAccountDto, UpdateAccountDto } from './dto/account.dto';
+import { COMMON_BROKER_SERVERS } from './broker-servers';
 
 const ACCOUNT_VIEW = {
   id: true,
@@ -96,6 +97,39 @@ export class AccountsService {
       select: ACCOUNT_VIEW,
       orderBy: { createdAt: 'desc' },
     });
+  }
+
+  /**
+   * Broker-server suggestions: servers already used on this platform (most
+   * relevant / verified to work) merged with a curated seed list. Free text is
+   * still accepted on create/update — this is a convenience, not a whitelist.
+   */
+  async serverSuggestions(q?: string): Promise<{ server: string; inUse: boolean }[]> {
+    const rows = await this.prisma.account.findMany({
+      where: { deletedAt: null },
+      select: { server: true },
+      distinct: ['server'],
+    });
+    const used = rows.map((r) => r.server).filter(Boolean);
+    const usedSet = new Set(used.map((s) => s.toLowerCase()));
+
+    const merged = [
+      ...used.map((server) => ({ server, inUse: true })),
+      ...COMMON_BROKER_SERVERS.filter((s) => !usedSet.has(s.toLowerCase())).map((server) => ({
+        server,
+        inUse: false,
+      })),
+    ];
+
+    const needle = q?.trim().toLowerCase();
+    const filtered = needle
+      ? merged.filter((m) => m.server.toLowerCase().includes(needle))
+      : merged;
+
+    // In-use first, then alphabetical.
+    return filtered
+      .sort((a, b) => Number(b.inUse) - Number(a.inUse) || a.server.localeCompare(b.server))
+      .slice(0, 50);
   }
 
   async findOne(id: string, actor: Actor): Promise<AccountView> {

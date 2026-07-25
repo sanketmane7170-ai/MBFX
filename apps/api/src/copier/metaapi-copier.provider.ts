@@ -56,10 +56,35 @@ export class MetaApiCopierProvider implements CopierProvider {
   private fail(label: string, e: unknown): never {
     if (e instanceof HttpException) throw e;
     const raw = e instanceof Error ? e.message : String(e);
-    this.logger.error(`${label} failed: ${raw}`);
+    // MetaApi's ValidationError carries a `details` array explaining exactly
+    // which field failed — without it the message is just "Validation failed".
+    const detailText = MetaApiCopierProvider.formatDetails((e as any)?.details);
+    this.logger.error(
+      `${label} failed: ${raw}${detailText ? ` | details: ${detailText}` : ''}`,
+    );
     // Strip MetaApi's "(request-id). Request URL: ..." suffix.
     const clean = raw.split(/\s*\(/)[0].trim() || raw;
-    throw new BadRequestException(clean);
+    const message = detailText ? `${clean}: ${detailText}` : clean;
+    throw new BadRequestException(message);
+  }
+
+  /** Flatten a MetaApi error `details` payload into a readable one-liner. */
+  private static formatDetails(details: unknown): string {
+    if (!details) return '';
+    const arr = Array.isArray(details) ? details : [details];
+    return arr
+      .map((d) => {
+        if (typeof d === 'string') return d;
+        if (d && typeof d === 'object') {
+          const o = d as Record<string, unknown>;
+          const field = o.parameter ?? o.property ?? o.path ?? o.field;
+          const msg = o.message ?? o.error ?? JSON.stringify(o);
+          return field ? `${String(field)} — ${String(msg)}` : String(msg);
+        }
+        return String(d);
+      })
+      .filter(Boolean)
+      .join('; ');
   }
 
   async provisionAccount(input: ProvisionAccountInput): Promise<{ metaapiAccountId: string }> {
@@ -201,34 +226,48 @@ export class MetaApiCopierProvider implements CopierProvider {
 
   /**
    * Maps our rule set onto a CopyFactory subscription. Field names below match
-   * the CopyFactory subscription schema; the SL/TP + trade-size-scaling shapes
-   * are confirmed during the Phase 0 live spike (see class header).
+   * the CopyFactory v11 subscription schema (CopyFactoryStrategySubscription):
+   * trade sizing is the `tradeSizeScaling` object, SL/TP are `copyStopLoss` /
+   * `copyTakeProfit` booleans. There is no `paused` field — enable/disable maps
+   * to `closeOnly`, which stops opening new copied positions.
    */
   private applyRules(
     subscription: any,
     rules: Partial<SubscriptionRules> & { enabled?: boolean },
   ): void {
-    if (rules.multiplier != null) subscription.multiplier = rules.multiplier;
     if (rules.reverse != null) subscription.reverse = rules.reverse;
-    if (rules.enabled != null) subscription.paused = !rules.enabled;
-    if (rules.symbolMapping) {
+    if (rules.symbolMapping && rules.symbolMapping.length) {
       subscription.symbolMapping = rules.symbolMapping.map((m) => ({ from: m.from, to: m.to }));
     }
 
-    // Lot sizing → CopyFactory trade-size scaling.
-    if (rules.sizingMode === SizingMode.BALANCE_RATIO) {
-      subscription.tradeSizeScalingMode = 'balance'; // proportional to relative balances
-    } else if (rules.sizingMode === SizingMode.FIXED_LOT) {
-      subscription.tradeSizeScalingMode = 'none'; // `multiplier` carries the fixed lot size
-    } else if (rules.sizingMode === SizingMode.MULTIPLIER) {
-      subscription.tradeSizeScalingMode = 'none';
+    // SL/TP mirroring.
+    if (rules.copySl != null) subscription.copyStopLoss = rules.copySl;
+    if (rules.copyTp != null) subscription.copyTakeProfit = rules.copyTp;
+
+    // Lot sizing → CopyFactory `tradeSizeScaling` object.
+    if (rules.sizingMode != null) {
+      const mult = rules.multiplier ?? 1;
+      if (rules.sizingMode === SizingMode.BALANCE_RATIO) {
+        // Scale proportionally to the relative balances of source/receiver.
+        subscription.tradeSizeScaling = { mode: 'balance' };
+        subscription.multiplier = 1;
+      } else if (rules.sizingMode === SizingMode.FIXED_LOT) {
+        // Every copied trade uses a fixed lot size (carried by `multiplier`).
+        subscription.tradeSizeScaling = { mode: 'fixedVolume', tradeVolume: mult };
+        subscription.multiplier = 1;
+      } else {
+        // MULTIPLIER — preserve the source volume, then scale by `multiplier`.
+        subscription.tradeSizeScaling = { mode: 'none' };
+        subscription.multiplier = mult;
+      }
+    } else if (rules.multiplier != null) {
+      subscription.multiplier = rules.multiplier;
     }
 
-    // SL/TP mirroring — strip on the receiver when copying is disabled.
-    if (rules.copySl === false) subscription.removeStopLoss = true;
-    else if (rules.copySl === true) subscription.removeStopLoss = false;
-    if (rules.copyTp === false) subscription.removeTakeProfit = true;
-    else if (rules.copyTp === true) subscription.removeTakeProfit = false;
+    // Enable/disable. CopyFactory has no pause flag; `closeOnly` stops opening
+    // new copied positions while keeping the subscription config intact.
+    if (rules.enabled === false) subscription.closeOnly = 'by-symbol';
+    else if (rules.enabled === true) delete subscription.closeOnly;
   }
 
   private async setPaused(subscriberId: string, paused: boolean): Promise<void> {
@@ -236,7 +275,12 @@ export class MetaApiCopierProvider implements CopierProvider {
     const cfg = copyFactory.configurationApi;
     const existing = await cfg.getSubscriber(subscriberId).catch(() => null);
     if (!existing) return;
-    const subs: any[] = (existing.subscriptions ?? []).map((s: any) => ({ ...s, paused }));
+    const subs: any[] = (existing.subscriptions ?? []).map((s: any) => {
+      const next = { ...s };
+      if (paused) next.closeOnly = 'by-symbol';
+      else delete next.closeOnly;
+      return next;
+    });
     await cfg.updateSubscriber(subscriberId, { name: existing.name ?? 'slave', subscriptions: subs });
   }
 }
