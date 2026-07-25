@@ -1,6 +1,10 @@
 import { Injectable, Logger } from '@nestjs/common';
+import { ConfigService } from '@nestjs/config';
+import { Role, UserStatus } from '@prisma/client';
 import { createTransport, type Transporter } from 'nodemailer';
+import { PrismaService } from '../prisma/prisma.service';
 import { SettingsService, SmtpConfig } from '../settings/settings.service';
+import { copyAlertEmail, inviteEmail, resetEmail } from './templates';
 
 export interface MailInput {
   to: string;
@@ -12,6 +16,16 @@ export interface MailInput {
 export interface MailResult {
   ok: boolean;
   message: string;
+}
+
+/** Details for a failed-copy alert email. */
+export interface CopyAlertInput {
+  receiverAccountId: string;
+  sourceAccountId: string;
+  symbol: string;
+  side: string;
+  lots: number | string;
+  action: string;
 }
 
 function errMsg(e: unknown): string {
@@ -31,10 +45,23 @@ export class MailService {
   private readonly logger = new Logger(MailService.name);
   private cached: { signature: string; transporter: Transporter } | null = null;
 
-  constructor(private readonly settings: SettingsService) {}
+  // Copy-alert throttle: last-sent time per dedupe key, to avoid inbox floods.
+  private readonly alertThrottle = new Map<string, number>();
+  private readonly ALERT_WINDOW_MS = 5 * 60 * 1000;
+
+  constructor(
+    private readonly settings: SettingsService,
+    private readonly prisma: PrismaService,
+    private readonly config: ConfigService,
+  ) {}
 
   isConfigured(): boolean {
     return this.settings.hasSmtp();
+  }
+
+  private appUrl(): string | null {
+    const u = this.config.get<string>('APP_URL');
+    return u && u.trim().length > 0 ? u.replace(/\/+$/, '') : null;
   }
 
   private signature(cfg: SmtpConfig): string {
@@ -100,5 +127,74 @@ export class MailService {
     const r = await this.sendWith(cfg, input);
     if (!r.ok) this.logger.error(`Email "${input.subject}" to ${input.to} failed: ${r.message}`);
     return r;
+  }
+
+  // ---------------------------------------------------------------------------
+  // Application emails (Phase 2 & 3). All best-effort — never throw.
+  // ---------------------------------------------------------------------------
+
+  /** New-admin invite with temporary credentials. */
+  async sendAdminInvite(email: string, tempPassword: string): Promise<MailResult> {
+    const { subject, html, text } = inviteEmail({ email, password: tempPassword, url: this.appUrl() });
+    return this.send({ to: email, subject, html, text });
+  }
+
+  /** Notice that a super-admin reset this admin's password. */
+  async sendPasswordResetNotice(email: string, newPassword: string): Promise<MailResult> {
+    const { subject, html, text } = resetEmail({ email, password: newPassword, url: this.appUrl() });
+    return this.send({ to: email, subject, html, text });
+  }
+
+  /** Recipients for copy alerts: configured alertEmail, else all active super-admins. */
+  private async alertRecipients(): Promise<string[]> {
+    const cfg = this.settings.getSmtpConfig();
+    if (cfg?.alertEmail) return [cfg.alertEmail];
+    const admins = await this.prisma.user.findMany({
+      where: { role: Role.SUPER_ADMIN, status: UserStatus.ACTIVE },
+      select: { email: true },
+    });
+    return admins.map((a) => a.email);
+  }
+
+  /**
+   * Fire-and-forget alert on a failed copy. Skips when email/alerts are off, and
+   * throttles per receiver+symbol so a broker outage can't flood the inbox.
+   */
+  async sendCopyAlert(evt: CopyAlertInput): Promise<void> {
+    const cfg = this.settings.getSmtpConfig();
+    if (!cfg || !cfg.alertsEnabled) return;
+
+    const key = `${evt.receiverAccountId}|${evt.symbol}|${evt.side}`;
+    const now = Date.now();
+    const last = this.alertThrottle.get(key) ?? 0;
+    if (now - last < this.ALERT_WINDOW_MS) return;
+    this.alertThrottle.set(key, now);
+
+    try {
+      const recipients = await this.alertRecipients();
+      if (recipients.length === 0) return;
+
+      const accounts = await this.prisma.account.findMany({
+        where: { id: { in: [evt.sourceAccountId, evt.receiverAccountId] } },
+        select: { id: true, label: true, login: true },
+      });
+      const label = (id: string) => {
+        const a = accounts.find((x) => x.id === id);
+        return a ? `${a.label} (#${a.login})` : id;
+      };
+      const source = label(evt.sourceAccountId);
+      const receiver = label(evt.receiverAccountId);
+      const order = `${evt.side} ${evt.lots} ${evt.symbol} (${evt.action})`;
+
+      const { subject, html, text } = copyAlertEmail({
+        order,
+        master: source,
+        slave: receiver,
+        url: this.appUrl(),
+      });
+      await this.send({ to: recipients.join(', '), subject, html, text });
+    } catch (e) {
+      this.logger.error('Failed to send copy alert: ' + errMsg(e));
+    }
   }
 }

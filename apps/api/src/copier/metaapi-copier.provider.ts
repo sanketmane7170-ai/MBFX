@@ -1,4 +1,10 @@
-import { Injectable, Logger, ServiceUnavailableException } from '@nestjs/common';
+import {
+  BadRequestException,
+  HttpException,
+  Injectable,
+  Logger,
+  ServiceUnavailableException,
+} from '@nestjs/common';
 import { SettingsService } from '../settings/settings.service';
 import {
   AddSubscriberInput,
@@ -45,7 +51,18 @@ export class MetaApiCopierProvider implements CopierProvider {
     return this.clients;
   }
 
+  /** Translate a raw MetaApi/SDK error into a clean 400 with a readable message. */
+  private fail(label: string, e: unknown): never {
+    if (e instanceof HttpException) throw e;
+    const raw = e instanceof Error ? e.message : String(e);
+    this.logger.error(`${label} failed: ${raw}`);
+    // Strip MetaApi's "(request-id). Request URL: ..." suffix.
+    const clean = raw.split(/\s*\(/)[0].trim() || raw;
+    throw new BadRequestException(clean);
+  }
+
   async provisionAccount(input: ProvisionAccountInput): Promise<{ metaapiAccountId: string }> {
+    try {
     const { metaApi, region } = await this.getClients();
     const account = await metaApi.metatraderAccountApi.createAccount({
       name: input.name,
@@ -65,6 +82,9 @@ export class MetaApiCopierProvider implements CopierProvider {
     await account.waitConnected();
     this.logger.log(`Provisioned MetaApi account ${account.id} (${input.login}@${input.server})`);
     return { metaapiAccountId: account.id };
+    } catch (e) {
+      this.fail('provisionAccount', e);
+    }
   }
 
   async removeAccount(metaapiAccountId: string): Promise<void> {
@@ -78,16 +98,20 @@ export class MetaApiCopierProvider implements CopierProvider {
     metaapiAccountId: string;
     name: string;
   }): Promise<{ strategyId: string }> {
-    const { copyFactory } = await this.getClients();
-    const cfg = copyFactory.configurationApi;
-    const generated = await cfg.generateStrategyId();
-    const strategyId = generated.id ?? generated;
-    await cfg.updateStrategy(strategyId, {
-      name: input.name,
-      description: input.name, // required by CopyFactory
-      accountId: input.metaapiAccountId,
-    });
-    return { strategyId };
+    try {
+      const { copyFactory } = await this.getClients();
+      const cfg = copyFactory.configurationApi;
+      const generated = await cfg.generateStrategyId();
+      const strategyId = generated.id ?? generated;
+      await cfg.updateStrategy(strategyId, {
+        name: input.name,
+        description: input.name, // required by CopyFactory
+        accountId: input.metaapiAccountId,
+      });
+      return { strategyId };
+    } catch (e) {
+      this.fail('createStrategy', e);
+    }
   }
 
   async removeStrategy(strategyId: string): Promise<void> {
@@ -96,14 +120,18 @@ export class MetaApiCopierProvider implements CopierProvider {
   }
 
   async addSubscriber(input: AddSubscriberInput): Promise<{ subscriberId: string }> {
-    const { copyFactory } = await this.getClients();
-    const cfg = copyFactory.configurationApi;
-    // In CopyFactory the subscriber id is the slave's MetaApi account id.
-    await cfg.updateSubscriber(input.slaveMetaapiAccountId, {
-      name: 'slave',
-      subscriptions: [this.buildSubscription(input)],
-    });
-    return { subscriberId: input.slaveMetaapiAccountId };
+    try {
+      const { copyFactory } = await this.getClients();
+      const cfg = copyFactory.configurationApi;
+      // In CopyFactory the subscriber id is the slave's MetaApi account id.
+      await cfg.updateSubscriber(input.slaveMetaapiAccountId, {
+        name: 'slave',
+        subscriptions: [this.buildSubscription(input)],
+      });
+      return { subscriberId: input.slaveMetaapiAccountId };
+    } catch (e) {
+      this.fail('addSubscriber', e);
+    }
   }
 
   async updateSubscriber(

@@ -1,6 +1,7 @@
 import { Injectable } from '@nestjs/common';
 import { CopyEvent, CopyStatus, Prisma } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
+import { MailService } from '../mail/mail.service';
 import { StreamGateway } from './stream.gateway';
 import { IngestCopyEvent, IngestSnapshot } from './monitoring.types';
 
@@ -15,6 +16,7 @@ export class MonitoringService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly gateway: StreamGateway,
+    private readonly mail: MailService,
   ) {}
 
   async ingestCopyEvent(evt: IngestCopyEvent): Promise<CopyEvent> {
@@ -37,6 +39,18 @@ export class MonitoringService {
       },
     });
     this.gateway.emitCopyEvent(row);
+
+    // Fire-and-forget failure alert (throttled inside MailService). Never blocks ingest.
+    if (row.status === CopyStatus.FAILED) {
+      void this.mail.sendCopyAlert({
+        receiverAccountId: row.receiverAccountId,
+        sourceAccountId: row.sourceAccountId,
+        symbol: row.symbol,
+        side: row.side,
+        lots: row.lots.toString(),
+        action: row.action,
+      });
+    }
     return row;
   }
 

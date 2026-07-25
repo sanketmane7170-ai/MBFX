@@ -7,6 +7,7 @@ import { Prisma, Role, UserStatus } from '@prisma/client';
 import * as argon2 from 'argon2';
 import { PrismaService } from '../prisma/prisma.service';
 import { AuditService } from '../common/audit/audit.service';
+import { MailService } from '../mail/mail.service';
 
 const ADMIN_VIEW = {
   id: true,
@@ -25,6 +26,7 @@ export class AdminsService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly audit: AuditService,
+    private readonly mail: MailService,
   ) {}
 
   async create(
@@ -49,6 +51,8 @@ export class AdminsService {
         entityId: admin.id,
         meta: { email: admin.email },
       });
+      // Best-effort invite email — never blocks/fails admin creation.
+      await this.mail.sendAdminInvite(admin.email, dto.password);
       return admin;
     } catch (err) {
       if (
@@ -109,7 +113,7 @@ export class AdminsService {
     password: string,
     actorId: string,
   ): Promise<void> {
-    await this.findOne(id);
+    const admin = await this.findOne(id);
     const passwordHash = await argon2.hash(password);
     await this.prisma.user.update({
       where: { id },
@@ -121,5 +125,7 @@ export class AdminsService {
       entityType: 'User',
       entityId: id,
     });
+    // Best-effort notice — never blocks the reset.
+    await this.mail.sendPasswordResetNotice(admin.email, password);
   }
 }
