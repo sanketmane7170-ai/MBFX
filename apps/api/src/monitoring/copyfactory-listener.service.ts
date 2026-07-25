@@ -43,8 +43,9 @@ export class CopyFactoryListenerService implements OnModuleInit, OnModuleDestroy
     private readonly monitoring: MonitoringService,
   ) {}
 
-  async onModuleInit(): Promise<void> {
-    await this.safePoll();
+  onModuleInit(): void {
+    // Fire-and-forget so the initial sync never blocks app startup.
+    void this.safePoll();
     this.timer = setInterval(() => void this.safePoll(), this.POLL_MS);
     // Don't keep the event loop alive solely for this timer.
     this.timer.unref?.();

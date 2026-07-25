@@ -29,8 +29,10 @@ export class AccountSnapshotService implements OnModuleInit, OnModuleDestroy {
     @Inject(COPIER_PROVIDER) private readonly copier: CopierProvider,
   ) {}
 
-  async onModuleInit(): Promise<void> {
-    await this.safePoll();
+  onModuleInit(): void {
+    // Fire-and-forget: the first poll opens RPC connections (can take ~1 min),
+    // so it must NOT block the app from starting to listen.
+    void this.safePoll();
     this.timer = setInterval(() => void this.safePoll(), this.POLL_MS);
     this.timer.unref?.();
   }
