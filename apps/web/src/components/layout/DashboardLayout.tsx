@@ -10,6 +10,8 @@ import {
   LogOut,
   Menu,
   MonitorSmartphone,
+  PanelLeftClose,
+  PanelLeftOpen,
   ScrollText,
   Settings,
   ShieldCheck,
@@ -132,6 +134,15 @@ function UserMenu() {
 export default function DashboardLayout() {
   const user = getUser();
   const [mobileOpen, setMobileOpen] = useState(false);
+  const [collapsed, setCollapsed] = useState(
+    () => localStorage.getItem('sidebar_collapsed') === '1',
+  );
+
+  const toggleCollapsed = () =>
+    setCollapsed((v) => {
+      localStorage.setItem('sidebar_collapsed', v ? '0' : '1');
+      return !v;
+    });
 
   const groups: { label: string; items: NavItem[] }[] = [
     {
@@ -169,14 +180,22 @@ export default function DashboardLayout() {
         {/* Sidebar */}
         <aside
           className={cn(
-            'fixed inset-y-0 left-0 z-40 flex w-64 flex-col border-r border-gray-200 bg-white transition-transform md:translate-x-0',
+            'fixed inset-y-0 left-0 z-40 flex w-64 flex-col border-r border-gray-200 bg-white transition-[transform,width] md:translate-x-0',
+            collapsed ? 'md:w-16' : 'md:w-64',
             mobileOpen ? 'translate-x-0' : '-translate-x-full',
           )}
         >
-          <div className="flex h-16 items-center justify-between border-b border-gray-100 px-5">
+          <div
+            className={cn(
+              'flex h-16 items-center border-b border-gray-100',
+              collapsed ? 'justify-between px-5 md:justify-center md:px-2' : 'justify-between px-5',
+            )}
+          >
             <div className="flex items-center gap-2.5">
-              <img src="/logo.png" alt="MoneyBank FX" className="h-9 w-9 object-contain" />
-              <span className="text-[15px] font-bold text-gray-900">MoneyBank FX</span>
+              <img src="/logo.png" alt="MoneyBank FX" className="h-9 w-9 shrink-0 object-contain" />
+              <span className={cn('text-[15px] font-bold text-gray-900', collapsed && 'md:hidden')}>
+                MoneyBank FX
+              </span>
             </div>
             <button
               className="text-gray-400 md:hidden"
@@ -190,7 +209,12 @@ export default function DashboardLayout() {
           <nav className="flex-1 space-y-6 overflow-y-auto px-3 py-5">
             {groups.map((group) => (
               <div key={group.label}>
-                <div className="px-3 pb-2 text-xs font-semibold uppercase tracking-wider text-gray-400">
+                <div
+                  className={cn(
+                    'px-3 pb-2 text-xs font-semibold uppercase tracking-wider text-gray-400',
+                    collapsed && 'md:hidden',
+                  )}
+                >
                   {group.label}
                 </div>
                 <div className="space-y-1">
@@ -199,18 +223,20 @@ export default function DashboardLayout() {
                       key={item.to}
                       to={item.to}
                       end={item.end}
+                      title={collapsed ? item.label : undefined}
                       onClick={() => setMobileOpen(false)}
                       className={({ isActive }) =>
                         cn(
                           'flex items-center gap-3 rounded-lg px-3 py-2 text-sm font-medium transition-colors',
+                          collapsed && 'md:justify-center md:px-2',
                           isActive
                             ? 'bg-brand-50 text-brand-700'
                             : 'text-gray-600 hover:bg-gray-100',
                         )
                       }
                     >
-                      <item.icon className="h-[18px] w-[18px]" />
-                      {item.label}
+                      <item.icon className="h-[18px] w-[18px] shrink-0" />
+                      <span className={cn(collapsed && 'md:hidden')}>{item.label}</span>
                     </NavLink>
                   ))}
                 </div>
@@ -218,12 +244,6 @@ export default function DashboardLayout() {
             ))}
           </nav>
 
-          <div className="space-y-0.5 border-t border-gray-100 px-5 py-3 text-xs text-gray-400">
-            <div>MoneyBank FX · v{__APP_VERSION__}</div>
-            <div>
-              Developed by <span className="font-medium text-gray-500">Sanket Patil</span> · 9270507170
-            </div>
-          </div>
         </aside>
 
         {mobileOpen && (
@@ -234,7 +254,12 @@ export default function DashboardLayout() {
         )}
 
         {/* Content */}
-        <div className="md:pl-64">
+        <div
+          className={cn(
+            'flex min-h-screen flex-col transition-[padding]',
+            collapsed ? 'md:pl-16' : 'md:pl-64',
+          )}
+        >
           <header className="sticky top-0 z-20 flex h-16 items-center justify-between border-b border-gray-200 bg-white/80 px-4 backdrop-blur sm:px-6">
             <button
               onClick={() => setMobileOpen(true)}
@@ -242,6 +267,14 @@ export default function DashboardLayout() {
               aria-label="Open menu"
             >
               <Menu className="h-5 w-5" />
+            </button>
+            <button
+              onClick={toggleCollapsed}
+              className="hidden text-gray-500 hover:text-gray-800 md:inline-flex"
+              aria-label={collapsed ? 'Expand sidebar' : 'Collapse sidebar'}
+              title={collapsed ? 'Expand sidebar' : 'Collapse sidebar'}
+            >
+              {collapsed ? <PanelLeftOpen className="h-5 w-5" /> : <PanelLeftClose className="h-5 w-5" />}
             </button>
             <div className="flex items-center gap-2 md:hidden">
               <img src="/logo.png" alt="" className="h-7 w-7 object-contain" />
@@ -252,9 +285,17 @@ export default function DashboardLayout() {
             </div>
           </header>
 
-          <main className="mx-auto max-w-7xl px-4 py-8 sm:px-6">
+          <main className="mx-auto w-full max-w-7xl flex-1 px-4 py-8 sm:px-6">
             <Outlet />
           </main>
+
+          {/* Footer — shown at the bottom of every dashboard page */}
+          <footer className="border-t border-gray-100 px-4 py-4 text-center text-xs text-gray-400 sm:px-6">
+            <div>MoneyBank FX · v{__APP_VERSION__}</div>
+            <div>
+              Developed by <span className="font-medium text-gray-500">Sanket Patil</span> · 9270507170
+            </div>
+          </footer>
         </div>
       </div>
     </ToastProvider>
