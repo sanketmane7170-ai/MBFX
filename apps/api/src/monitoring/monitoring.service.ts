@@ -55,6 +55,68 @@ export class MonitoringService {
     return row;
   }
 
+  /**
+   * Idempotent ingest keyed by `externalId` (a CopyFactory transaction id). Safe
+   * to call repeatedly for the same transaction while polling — the first call
+   * inserts + emits, later calls only refresh mutable fields (P/L, latency,
+   * status, receiver ticket). Falls back to a plain insert when no externalId.
+   */
+  async upsertCopyEvent(evt: IngestCopyEvent): Promise<CopyEvent> {
+    if (!evt.externalId) return this.ingestCopyEvent(evt);
+
+    const existing = await this.prisma.copyEvent.findUnique({
+      where: { externalId: evt.externalId },
+      select: { id: true },
+    });
+
+    const data = {
+      externalId: evt.externalId,
+      copierConfigId: evt.copierConfigId,
+      sourceAccountId: evt.sourceAccountId,
+      receiverAccountId: evt.receiverAccountId,
+      sourceTicket: evt.sourceTicket,
+      receiverTicket: evt.receiverTicket,
+      symbol: evt.symbol,
+      side: evt.side,
+      lots: evt.lots,
+      sl: evt.sl,
+      tp: evt.tp,
+      action: evt.action,
+      status: evt.status ?? CopyStatus.SUCCESS,
+      latencyMs: evt.latencyMs,
+      pnl: evt.pnl,
+      ...(evt.ts ? { ts: evt.ts } : {}),
+    };
+
+    const row = await this.prisma.copyEvent.upsert({
+      where: { externalId: evt.externalId },
+      create: data,
+      update: {
+        status: data.status,
+        latencyMs: data.latencyMs,
+        pnl: data.pnl,
+        receiverTicket: data.receiverTicket,
+        lots: data.lots,
+      },
+    });
+
+    // Only push to the live feed / alert on the first sighting.
+    if (!existing) {
+      this.gateway.emitCopyEvent(row);
+      if (row.status === CopyStatus.FAILED) {
+        void this.mail.sendCopyAlert({
+          receiverAccountId: row.receiverAccountId,
+          sourceAccountId: row.sourceAccountId,
+          symbol: row.symbol,
+          side: row.side,
+          lots: row.lots.toString(),
+          action: row.action,
+        });
+      }
+    }
+    return row;
+  }
+
   async ingestSnapshot(snap: IngestSnapshot) {
     const row = await this.prisma.accountSnapshot.create({
       data: {

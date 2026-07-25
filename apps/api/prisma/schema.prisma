@@ -221,6 +221,7 @@ enum CopyStatus {
 
 model CopyEvent {
   id                String     @id @default(uuid())
+  externalId        String?    @unique
   copierConfigId    String?
   sourceAccountId   String
   receiverAccountId String

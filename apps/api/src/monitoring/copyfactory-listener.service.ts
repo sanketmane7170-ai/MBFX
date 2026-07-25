@@ -3,29 +3,38 @@ import { CopyAction, CopyStatus, Side } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import { SettingsService } from '../settings/settings.service';
 import { MonitoringService } from './monitoring.service';
+import { IngestCopyEvent } from './monitoring.types';
+
+/** Routing context resolved from a (strategyId, subscriberId) pair. */
+interface RouteCtx {
+  receiverAccountId: string;
+  copierConfigId: string;
+  sourceAccountId: string;
+}
 
 /**
  * Turns real CopyFactory copy activity into CopyEvents in our DB + WebSocket feed.
  *
- * Design: a periodic re-sync registers a CopyFactory subscriber-log listener for
- * every active receiver, and drops listeners for receivers that are gone. The
- * re-sync doubles as reconnection/heartbeat — a dropped stream is simply
- * re-registered on the next tick. Idle (no-op) until a MetaApi token is set.
- *
- * NOTE: the CopyFactory SDK record/method shapes accessed here are typed loosely
- * and must be confirmed against a live token during the Phase 0 spike (same
- * caveat as MetaApiCopierProvider). Until then this is wired but unverified.
+ * Design: poll `historyApi.getSubscriptionTransactions` on a short interval and
+ * idempotently upsert each transaction (keyed by its CopyFactory transaction id)
+ * into copy_events. Polling — rather than a streaming log listener — means the
+ * feed self-heals after restarts/outages (it re-scans a window and backfills)
+ * and every row carries the real fields the dashboard needs: lots (`quantity`),
+ * latency (`metrics.tradeCopyingLatency`), P/L (`profit`) and the slave ticket
+ * (`slavePositionId`). Idle (no-op) until a MetaApi token is configured.
  */
 @Injectable()
 export class CopyFactoryListenerService implements OnModuleInit, OnModuleDestroy {
   private readonly logger = new Logger(CopyFactoryListenerService.name);
-  private readonly SYNC_MS = 60_000;
+  private readonly POLL_MS = 10_000;
+  private readonly BACKFILL_MS = 24 * 60 * 60 * 1000; // first poll looks back 24h
+  private readonly OVERLAP_MS = 2 * 60 * 1000; // re-scan window to catch late field updates
 
-  private tradingApi: any = null;
-  private clientKey: string | null = null; // token|region the client was built for
-  private readonly listeners = new Map<string, string>(); // subscriberId -> listenerId
+  private historyApi: any = null;
+  private clientKey: string | null = null; // token the client was built for
+  private since: Date | null = null; // high-water mark of the last scan
   private timer: NodeJS.Timeout | null = null;
-  private syncing = false;
+  private polling = false;
 
   constructor(
     private readonly settings: SettingsService,
@@ -34,9 +43,8 @@ export class CopyFactoryListenerService implements OnModuleInit, OnModuleDestroy
   ) {}
 
   async onModuleInit(): Promise<void> {
-    // Kick an initial sync, then re-sync on an interval (also our reconnect loop).
-    await this.safeSync();
-    this.timer = setInterval(() => void this.safeSync(), this.SYNC_MS);
+    await this.safePoll();
+    this.timer = setInterval(() => void this.safePoll(), this.POLL_MS);
     // Don't keep the event loop alive solely for this timer.
     this.timer.unref?.();
   }
@@ -45,139 +53,117 @@ export class CopyFactoryListenerService implements OnModuleInit, OnModuleDestroy
     if (this.timer) clearInterval(this.timer);
   }
 
-  private async safeSync(): Promise<void> {
-    if (this.syncing) return;
-    this.syncing = true;
+  private async safePoll(): Promise<void> {
+    if (this.polling) return;
+    this.polling = true;
     try {
-      await this.sync();
+      await this.poll();
     } catch (e) {
-      this.logger.warn(`CopyFactory listener sync failed: ${(e as Error).message}`);
+      this.logger.warn(`CopyFactory poll failed: ${(e as Error).message}`);
     } finally {
-      this.syncing = false;
+      this.polling = false;
     }
   }
 
-  private async tradingApiClient(): Promise<any | null> {
+  private async historyApiClient(): Promise<any | null> {
     const token = this.settings.getToken();
     if (!token) return null;
-    const region = this.settings.getRegion();
-    const key = `${token}|${region}`;
-    if (this.tradingApi && this.clientKey === key) return this.tradingApi;
+    if (this.historyApi && this.clientKey === token) return this.historyApi;
 
     const mod: any = await import('metaapi.cloud-sdk');
     const CopyFactory = mod.CopyFactory ?? (mod.default ?? mod).CopyFactory;
-    const copyFactory = new CopyFactory(token, { region });
-    this.tradingApi = copyFactory.tradingApi ?? copyFactory.userLogApi;
-    this.clientKey = key;
-    this.listeners.clear(); // token changed → old listener ids are invalid
-    return this.tradingApi;
+    // No region pin — the history REST API is global and resolves each account's
+    // own region server-side (accounts may live outside the configured region).
+    const copyFactory = new CopyFactory(token);
+    this.historyApi = copyFactory.historyApi;
+    this.clientKey = token;
+    return this.historyApi;
   }
 
-  private async sync(): Promise<void> {
-    if (!this.settings.hasToken()) {
-      // Token cleared → tear down any listeners and go idle.
-      if (this.listeners.size) await this.teardown();
-      return;
-    }
-    const api = await this.tradingApiClient();
+  private async poll(): Promise<void> {
+    if (!this.settings.hasToken()) return;
+    const api = await this.historyApiClient();
     if (!api) return;
 
+    // Map (strategyId | subscriberId) -> routing context. Keyed by both so a
+    // receiver subscribed to several strategies routes each trade correctly.
     const subs = await this.prisma.subscription.findMany({
-      where: { enabled: true, copierConfig: { enabled: true } },
       select: {
         copyfactorySubscriberId: true,
         receiverAccountId: true,
         copierConfigId: true,
-        copierConfig: { select: { sourceAccountId: true } },
+        copierConfig: { select: { sourceAccountId: true, copyfactoryStrategyId: true } },
       },
     });
+    if (!subs.length) return;
 
-    const wanted = new Set(subs.map((s) => s.copyfactorySubscriberId));
-
-    // Register listeners for newly-active receivers.
+    const routes = new Map<string, RouteCtx>();
     for (const s of subs) {
-      if (this.listeners.has(s.copyfactorySubscriberId)) continue;
-      try {
-        const ctx = {
-          subscriberId: s.copyfactorySubscriberId,
-          receiverAccountId: s.receiverAccountId,
-          sourceAccountId: s.copierConfig.sourceAccountId,
-          copierConfigId: s.copierConfigId,
-        };
-        const listener = {
-          onUserLog: async (records: any[]) => {
-            for (const r of records ?? []) await this.handleRecord(r, ctx);
-          },
-        };
-        const listenerId = await api.addSubscriberLogListener(
-          listener,
-          s.copyfactorySubscriberId,
-        );
-        this.listeners.set(s.copyfactorySubscriberId, listenerId ?? s.copyfactorySubscriberId);
-        this.logger.log(`Listening to CopyFactory subscriber ${s.copyfactorySubscriberId}`);
-      } catch (e) {
-        this.logger.warn(`addSubscriberLogListener failed: ${(e as Error).message}`);
-      }
+      const key = `${s.copierConfig.copyfactoryStrategyId}|${s.copyfactorySubscriberId}`;
+      routes.set(key, {
+        receiverAccountId: s.receiverAccountId,
+        copierConfigId: s.copierConfigId,
+        sourceAccountId: s.copierConfig.sourceAccountId,
+      });
     }
 
-    // Drop listeners for receivers that are no longer active.
-    for (const [subscriberId, listenerId] of this.listeners) {
-      if (wanted.has(subscriberId)) continue;
-      await api.removeSubscriberLogListener?.(listenerId).catch(() => undefined);
-      this.listeners.delete(subscriberId);
+    const now = new Date();
+    const from = this.since
+      ? new Date(this.since.getTime() - this.OVERLAP_MS)
+      : new Date(now.getTime() - this.BACKFILL_MS);
+
+    const txns: any[] = (await api.getSubscriptionTransactions(from, now)) ?? [];
+    let ingested = 0;
+    for (const t of txns) {
+      const strategyId = t?.strategy?.id ?? t?.strategy?._id;
+      const ctx = routes.get(`${strategyId}|${t?.subscriberId}`);
+      if (!ctx) continue; // a transaction we don't manage / can't attribute
+      const evt = this.toEvent(t, ctx);
+      if (!evt) continue;
+      await this.monitoring.upsertCopyEvent(evt);
+      ingested++;
     }
+    this.since = now;
+    if (ingested) this.logger.log(`Synced ${ingested} copy transaction(s) from CopyFactory`);
   }
 
-  private async teardown(): Promise<void> {
-    const api = this.tradingApi;
-    if (api) {
-      for (const listenerId of this.listeners.values()) {
-        await api.removeSubscriberLogListener?.(listenerId).catch(() => undefined);
-      }
-    }
-    this.listeners.clear();
-  }
+  /** Map a CopyFactoryTransaction onto our CopyEvent shape. */
+  private toEvent(t: any, ctx: RouteCtx): IngestCopyEvent | null {
+    const symbol: string | undefined = t?.symbol;
+    if (!symbol) return null;
 
-  /**
-   * Maps a CopyFactory subscriber-log record to a CopyEvent. Record fields are
-   * best-effort and defensive — confirm exact shapes in the Phase 0 spike.
-   */
-  private async handleRecord(
-    record: any,
-    ctx: {
-      subscriberId: string;
-      receiverAccountId: string;
-      sourceAccountId: string;
-      copierConfigId: string;
-    },
-  ): Promise<void> {
-    // Only act on records that represent a copied trade (open/close), not chatter.
-    const type: string = (record?.type ?? record?.operation ?? '').toString().toLowerCase();
-    const isClose = /close|exit/.test(type);
-    const isOpen = /open|entry|market/.test(type);
-    if (!isOpen && !isClose) return;
+    // Only trade deals (skip balance/credit/correction transactions).
+    const type = String(t?.type ?? '').toUpperCase();
+    if (!/BUY|SELL/.test(type)) return null;
+    const side: Side = type.includes('SELL') ? Side.SELL : Side.BUY;
 
-    const level: string = (record?.level ?? 'info').toString().toLowerCase();
-    const status = level === 'error' ? CopyStatus.FAILED : CopyStatus.SUCCESS;
+    // Transaction id is "<dealId>:open" | "<dealId>:close".
+    const rawId = String(t?.id ?? '');
+    const action: CopyAction = /:close$/i.test(rawId) ? CopyAction.CLOSE : CopyAction.OPEN;
 
-    const symbol: string | undefined = record?.symbol ?? record?.positionSymbol;
-    if (!symbol) return;
+    const lots = Math.abs(Number(t?.quantity ?? 0)) || 0;
+    const latencyRaw = t?.metrics?.tradeCopyingLatency;
+    const latencyMs =
+      latencyRaw != null && Number.isFinite(Number(latencyRaw))
+        ? Math.round(Number(latencyRaw))
+        : undefined;
+    const pnl = t?.profit != null && Number.isFinite(Number(t.profit)) ? Number(t.profit) : undefined;
 
-    const rawSide = (record?.side ?? record?.positionType ?? record?.type ?? '').toString().toUpperCase();
-    const side: Side = rawSide.includes('SELL') ? Side.SELL : Side.BUY;
-    const lots = Number(record?.volume ?? record?.lots ?? record?.positionVolume ?? 0);
-
-    await this.monitoring.ingestCopyEvent({
+    return {
+      externalId: rawId || undefined,
       copierConfigId: ctx.copierConfigId,
       sourceAccountId: ctx.sourceAccountId,
       receiverAccountId: ctx.receiverAccountId,
-      sourceTicket: String(record?.signalPositionId ?? record?.positionId ?? record?.id ?? Date.now()),
-      receiverTicket: record?.positionId ? String(record.positionId) : undefined,
+      sourceTicket: String(t?.positionId ?? rawId),
+      receiverTicket: t?.slavePositionId ? String(t.slavePositionId) : undefined,
       symbol,
       side,
-      lots: Number.isFinite(lots) ? lots : 0,
-      action: isClose ? CopyAction.CLOSE : CopyAction.OPEN,
-      status,
-    });
+      lots,
+      action,
+      status: CopyStatus.SUCCESS,
+      latencyMs,
+      pnl,
+      ts: t?.time ? new Date(t.time) : undefined,
+    };
   }
 }

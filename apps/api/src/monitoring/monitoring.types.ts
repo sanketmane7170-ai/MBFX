@@ -1,7 +1,9 @@
 import { CopyAction, CopyStatus, Side } from '@prisma/client';
 
-/** A copy event to ingest (simulation now, CopyFactory listeners later). */
+/** A copy event to ingest (from real CopyFactory transactions or simulation). */
 export interface IngestCopyEvent {
+  /** Stable dedup key (e.g. CopyFactory transaction id "2048676112:open"). */
+  externalId?: string;
   copierConfigId?: string;
   sourceAccountId: string;
   receiverAccountId: string;
@@ -16,6 +18,8 @@ export interface IngestCopyEvent {
   status?: CopyStatus;
   latencyMs?: number;
   pnl?: number;
+  /** Event time (defaults to now when omitted). */
+  ts?: Date;
 }
 
 /** An account balance/equity snapshot to ingest. */
