@@ -4,6 +4,7 @@ import { PageHeader } from '@/components/layout/DashboardLayout';
 import { Button } from '@/components/ui/button';
 import { Field, Input, Select } from '@/components/ui/form';
 import { Card, EmptyState, ErrorState, LoadingBlock, StatCard } from '@/components/ui/misc';
+import { EquityCurve, PnlBars } from '@/components/ui/chart';
 import {
   accountsApi,
   reportsApi,
@@ -70,25 +71,67 @@ export default function ReportsPage() {
   }, []);
 
   const exportCsv = () => {
-    if (!report) return;
-    const header = ['period', 'start', 'trades', 'wins', 'losses', 'winRate', 'pnl', 'cumulativePnl'];
-    const rows = report.periods.map((p: ReportPeriod) => [
-      p.period,
-      p.start,
-      p.trades,
-      p.wins,
-      p.losses,
-      p.winRate.toFixed(4),
-      p.pnl,
-      p.cumulativePnl,
-    ]);
-    const csv = [header, ...rows]
-      .map((r) => r.map((c) => `"${String(c).replace(/"/g, '""')}"`).join(','))
-      .join('\n');
-    const url = URL.createObjectURL(new Blob([csv], { type: 'text/csv' }));
+    if (!report || !report.summary) return;
+    const esc = (c: unknown) => `"${String(c ?? '').replace(/"/g, '""')}"`;
+    const line = (cells: unknown[]) => cells.map(esc).join(',');
+    const sum = report.summary;
+    const blocks: string[] = [];
+
+    // Section 1 — summary KPIs (key,value pairs)
+    blocks.push('SUMMARY');
+    blocks.push(line(['metric', 'value']));
+    (
+      [
+        ['Realized P/L', sum.realizedPnl],
+        ['Win rate', `${(sum.winRate * 100).toFixed(1)}%`],
+        ['Trades (closed)', sum.closed],
+        ['Wins', sum.wins],
+        ['Losses', sum.losses],
+        ['Max drawdown', sum.maxDrawdown],
+        ['Profit factor', sum.profitFactor ?? ''],
+        ['Gross profit', sum.grossProfit],
+        ['Gross loss', sum.grossLoss],
+        ['Avg trade', sum.avgPnl],
+        ['Best trade', sum.bestTrade ?? ''],
+        ['Worst trade', sum.worstTrade ?? ''],
+        ['Volume (lots)', sum.volumeLots],
+        ['Opened', sum.opened],
+        ['Avg latency (ms)', sum.avgLatencyMs ?? ''],
+        ['Failed', sum.failed],
+        ['Filtered', sum.filtered],
+      ] as [string, unknown][]
+    ).forEach(([k, v]) => blocks.push(line([k, v])));
+
+    // Section 2 — per-period
+    blocks.push('');
+    blocks.push('BY PERIOD');
+    blocks.push(line(['period', 'start', 'trades', 'wins', 'losses', 'winRate', 'pnl', 'cumulativePnl']));
+    report.periods.forEach((p: ReportPeriod) =>
+      blocks.push(line([p.period, p.start, p.trades, p.wins, p.losses, p.winRate.toFixed(4), p.pnl, p.cumulativePnl])),
+    );
+
+    // Section 3 — by symbol
+    if (report.symbols.length) {
+      blocks.push('');
+      blocks.push('BY SYMBOL');
+      blocks.push(line(['symbol', 'trades', 'winRate', 'volumeLots', 'pnl']));
+      report.symbols.forEach((s) => blocks.push(line([s.symbol, s.trades, s.winRate.toFixed(4), s.volumeLots, s.pnl])));
+    }
+
+    // Section 4 — by account (portfolio view only)
+    if (!isAccountReport(report) && report.accounts.length) {
+      blocks.push('');
+      blocks.push('BY ACCOUNT');
+      blocks.push(line(['account', 'trades', 'winRate', 'realizedPnl', 'maxDrawdown']));
+      report.accounts.forEach((a) =>
+        blocks.push(line([a.label, a.trades, a.winRate.toFixed(4), a.realizedPnl, a.maxDrawdown])),
+      );
+    }
+
+    const url = URL.createObjectURL(new Blob([blocks.join('\n')], { type: 'text/csv' }));
     const a = document.createElement('a');
     a.href = url;
-    const who = report && isAccountReport(report) ? report.account.label.replace(/\s+/g, '-') : 'portfolio';
+    const who = isAccountReport(report) ? report.account.label.replace(/\s+/g, '-') : 'portfolio';
     a.download = `report-${who}-${bucket}-${new Date().toISOString().slice(0, 10)}.csv`;
     a.click();
     URL.revokeObjectURL(url);
@@ -102,11 +145,7 @@ export default function ReportsPage() {
         title="Reports"
         subtitle="Realized P/L, win rate, drawdown and per-period performance."
         actions={
-          <Button
-            variant="secondary"
-            onClick={exportCsv}
-            disabled={!report || report.periods.length === 0}
-          >
+          <Button variant="secondary" onClick={exportCsv} disabled={!report || !report.summary}>
             <Download className="h-4 w-4" /> Export CSV
           </Button>
         }
@@ -212,6 +251,23 @@ export default function ReportsPage() {
               </span>
               . That figure belongs to the receivers — the stats above are this account's own results.
             </Card>
+          )}
+
+          {report.periods.length > 0 && (
+            <div className="mb-6 grid gap-6 lg:grid-cols-2">
+              <Card className="p-4">
+                <div className="mb-3 text-sm font-medium text-gray-900">Equity curve (cumulative P/L)</div>
+                <EquityCurve
+                  points={report.periods.map((p) => ({ label: p.period, value: Number(p.cumulativePnl) }))}
+                />
+              </Card>
+              <Card className="p-4">
+                <div className="mb-3 text-sm font-medium text-gray-900">
+                  P/L per {bucket === 'day' ? 'day' : bucket === 'week' ? 'week' : 'month'}
+                </div>
+                <PnlBars points={report.periods.map((p) => ({ label: p.period, value: Number(p.pnl) }))} />
+              </Card>
+            </div>
           )}
 
           <Card className="mb-6">

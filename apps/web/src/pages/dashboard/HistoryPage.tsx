@@ -18,20 +18,21 @@ export default function HistoryPage() {
   const [items, setItems] = useState<CopyEvent[]>([]);
   const [total, setTotal] = useState(0);
   const [loading, setLoading] = useState(true);
+  const [exporting, setExporting] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  const filters = () => ({
+    status: status || undefined,
+    symbol: symbol.trim() || undefined,
+    from: from ? new Date(from).toISOString() : undefined,
+    to: to ? new Date(to).toISOString() : undefined,
+  });
 
   const load = async () => {
     setLoading(true);
     setError(null);
     try {
-      const r = await monitoringApi.history({
-        status: status || undefined,
-        symbol: symbol.trim() || undefined,
-        from: from ? new Date(from).toISOString() : undefined,
-        to: to ? new Date(to).toISOString() : undefined,
-        limit: PAGE,
-        offset: page * PAGE,
-      });
+      const r = await monitoringApi.history({ ...filters(), limit: PAGE, offset: page * PAGE });
       setItems(r.items);
       setTotal(r.total);
     } catch (e) {
@@ -51,25 +52,43 @@ export default function HistoryPage() {
     load();
   };
 
-  const exportCsv = () => {
-    const header = ['time', 'symbol', 'side', 'lots', 'action', 'status', 'latencyMs', 'pnl'];
-    const rows = items.map((e) => [
-      new Date(e.ts).toISOString(),
-      e.symbol,
-      e.side,
-      e.lots,
-      e.action,
-      e.status,
-      e.latencyMs ?? '',
-      e.pnl ?? '',
-    ]);
-    const csv = [header, ...rows].map((r) => r.map((c) => `"${String(c).replace(/"/g, '""')}"`).join(',')).join('\n');
-    const url = URL.createObjectURL(new Blob([csv], { type: 'text/csv' }));
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = `copy-events-${new Date().toISOString().slice(0, 10)}.csv`;
-    a.click();
-    URL.revokeObjectURL(url);
+  // Export the whole filtered result set (paged in chunks), not just this page.
+  const exportCsv = async () => {
+    setExporting(true);
+    try {
+      const CHUNK = 500;
+      const MAX = 20000; // safety cap
+      const all: CopyEvent[] = [];
+      let offset = 0;
+      for (;;) {
+        const r = await monitoringApi.history({ ...filters(), limit: CHUNK, offset });
+        all.push(...r.items);
+        offset += CHUNK;
+        if (r.items.length === 0 || all.length >= r.total || all.length >= MAX) break;
+      }
+      const header = ['time', 'symbol', 'side', 'lots', 'action', 'status', 'latencyMs', 'pnl', 'sourceTicket', 'receiverTicket'];
+      const rows = all.map((e) => [
+        new Date(e.ts).toISOString(),
+        e.symbol,
+        e.side,
+        e.lots,
+        e.action,
+        e.status,
+        e.latencyMs ?? '',
+        e.pnl ?? '',
+        e.sourceTicket ?? '',
+        e.receiverTicket ?? '',
+      ]);
+      const csv = [header, ...rows].map((r) => r.map((c) => `"${String(c).replace(/"/g, '""')}"`).join(',')).join('\n');
+      const url = URL.createObjectURL(new Blob([csv], { type: 'text/csv' }));
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `copy-events-${new Date().toISOString().slice(0, 10)}.csv`;
+      a.click();
+      URL.revokeObjectURL(url);
+    } finally {
+      setExporting(false);
+    }
   };
 
   const pages = Math.max(1, Math.ceil(total / PAGE));
@@ -80,8 +99,8 @@ export default function HistoryPage() {
         title="Copy History"
         subtitle="Every copied trade across your copiers."
         actions={
-          <Button variant="secondary" onClick={exportCsv} disabled={items.length === 0}>
-            <Download className="h-4 w-4" /> Export CSV
+          <Button variant="secondary" onClick={exportCsv} disabled={total === 0} loading={exporting}>
+            <Download className="h-4 w-4" /> Export CSV{total > items.length ? ` (${total})` : ''}
           </Button>
         }
       />

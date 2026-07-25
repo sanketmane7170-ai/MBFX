@@ -8,15 +8,19 @@ import { SimulationService } from './simulation.service';
 import { CopyFactoryListenerService } from './copyfactory-listener.service';
 import { AccountSnapshotService } from './account-snapshot.service';
 
+// Dev-only trade simulation is not compiled into production at all — the route
+// simply does not exist there (previously it was mounted and returned 403).
+const isProd = process.env.NODE_ENV === 'production';
+
 @Module({
   imports: [JwtModule.register({})],
-  controllers: [MonitoringController, SimulationController],
+  controllers: [MonitoringController, ...(isProd ? [] : [SimulationController])],
   providers: [
     MonitoringService,
     StreamGateway,
-    SimulationService,
     CopyFactoryListenerService,
     AccountSnapshotService,
+    ...(isProd ? [] : [SimulationService]),
   ],
   exports: [MonitoringService, StreamGateway],
 })

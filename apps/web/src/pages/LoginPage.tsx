@@ -1,7 +1,7 @@
 import React, { useRef, useEffect, useState } from 'react';
 import { Eye, EyeOff, ArrowRight, Loader2 } from 'lucide-react';
 import { motion } from 'framer-motion';
-import { useNavigate } from 'react-router-dom';
+import { Link, useNavigate } from 'react-router-dom';
 import { cn } from '@/lib/utils';
 import { login } from '@/lib/api';
 
@@ -219,9 +219,17 @@ export default function LoginPage() {
                 </div>
 
                 <div>
-                  <label htmlFor="password" className="block text-sm font-medium text-gray-700 mb-1">
-                    Password <span className="text-blue-500">*</span>
-                  </label>
+                  <div className="mb-1 flex items-center justify-between">
+                    <label htmlFor="password" className="block text-sm font-medium text-gray-700">
+                      Password <span className="text-blue-500">*</span>
+                    </label>
+                    <Link
+                      to="/forgot-password"
+                      className="text-sm font-medium text-blue-600 hover:text-blue-700"
+                    >
+                      Forgot password?
+                    </Link>
+                  </div>
                   <div className="relative">
                     <input
                       id="password"

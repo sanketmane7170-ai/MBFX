@@ -5,8 +5,10 @@ import {
 } from '@nestjs/common';
 import { User, UserStatus } from '@prisma/client';
 import * as argon2 from 'argon2';
+import { randomBytes } from 'node:crypto';
 import { PrismaService } from '../prisma/prisma.service';
 import { AuditService } from '../common/audit/audit.service';
+import { MailService } from '../mail/mail.service';
 import { TokenService } from './token.service';
 
 export interface AuthTokens {
@@ -32,10 +34,13 @@ export interface LoginResult extends AuthTokens {
 
 @Injectable()
 export class AuthService {
+  private readonly RESET_TTL_MIN = 30;
+
   constructor(
     private readonly prisma: PrismaService,
     private readonly tokens: TokenService,
     private readonly audit: AuditService,
+    private readonly mail: MailService,
   ) {}
 
   async login(email: string, password: string, meta: SessionMeta = {}): Promise<LoginResult> {
@@ -197,6 +202,69 @@ export class AuthService {
       action: 'AUTH_PASSWORD_CHANGED',
       entityType: 'User',
       entityId: userId,
+    });
+  }
+
+  /**
+   * Self-service reset request. Always resolves the same way (no account
+   * enumeration): for a valid, active account it stores a hashed one-time token
+   * and emails a reset link. Never throws to the caller.
+   */
+  async forgotPassword(email: string): Promise<void> {
+    const user = await this.prisma.user.findUnique({ where: { email: email.toLowerCase() } });
+    if (!user || user.status === UserStatus.DISABLED) return;
+
+    const token = randomBytes(32).toString('base64url');
+    const resetTokenHash = await argon2.hash(token);
+    const resetTokenExpiresAt = new Date(Date.now() + this.RESET_TTL_MIN * 60_000);
+    await this.prisma.user.update({
+      where: { id: user.id },
+      data: { resetTokenHash, resetTokenExpiresAt },
+    });
+
+    await this.audit.log({
+      userId: user.id,
+      action: 'AUTH_PASSWORD_RESET_REQUESTED',
+      entityType: 'User',
+      entityId: user.id,
+    });
+
+    // Best-effort — a mail failure must not reveal whether the account exists.
+    await this.mail.sendPasswordResetLink(user.email, token, this.RESET_TTL_MIN).catch(() => undefined);
+  }
+
+  /** Complete a reset: verify the one-time token, set the new password, sign out everywhere. */
+  async resetPassword(email: string, token: string, newPassword: string): Promise<void> {
+    const invalid = new BadRequestException('This reset link is invalid or has expired.');
+    const user = await this.prisma.user.findUnique({ where: { email: email.toLowerCase() } });
+    if (
+      !user ||
+      user.status === UserStatus.DISABLED ||
+      !user.resetTokenHash ||
+      !user.resetTokenExpiresAt ||
+      user.resetTokenExpiresAt.getTime() < Date.now()
+    ) {
+      throw invalid;
+    }
+
+    const ok = await argon2.verify(user.resetTokenHash, token);
+    if (!ok) throw invalid;
+
+    const passwordHash = await argon2.hash(newPassword);
+    await this.prisma.user.update({
+      where: { id: user.id },
+      data: { passwordHash, resetTokenHash: null, resetTokenExpiresAt: null },
+    });
+    // Sign out every existing session after a reset.
+    await this.prisma.session.updateMany({
+      where: { userId: user.id, revokedAt: null },
+      data: { revokedAt: new Date() },
+    });
+    await this.audit.log({
+      userId: user.id,
+      action: 'AUTH_PASSWORD_RESET',
+      entityType: 'User',
+      entityId: user.id,
     });
   }
 

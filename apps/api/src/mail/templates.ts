@@ -389,3 +389,38 @@ export function copyAlertEmail(p: {
       `Further alerts for this account & symbol are muted for a few minutes.`,
   };
 }
+
+export function passwordResetLinkEmail(p: {
+  email: string;
+  url: string | null;
+  resetUrl: string;
+  expiresMinutes: number;
+}): RenderedEmail {
+  const inner = `
+    ${header(logoOf(p.url))}
+    ${heroCheck()}
+    ${heading('Reset your password', 'We received a request to reset the password for<br/>your MoneyBank FX account.')}
+    ${divider(28, 24)}
+    ${greeting(`Hello,<br/>Click the button below to choose a new password. This link expires in ${p.expiresMinutes} minutes.`)}
+    ${spacer(26)}
+    <tr><td align="center">${button('Reset my password', p.resetUrl)}</td></tr>
+    ${spacer(26)}
+    <tr><td>${orDivider()}</td></tr>
+    ${spacer(22)}
+    ${helpSection(
+      "Didn't request this?",
+      "If you didn't ask to reset your password, you can safely ignore this email — your password will not change.",
+    )}
+    ${footer(p.url)}
+  `;
+  return {
+    subject: 'Reset your MoneyBank FX password',
+    html: shell('Reset your MoneyBank FX password. This link expires soon.', inner),
+    text:
+      `Reset your password\n\n` +
+      `We received a request to reset the password for your MoneyBank FX account (${p.email}).\n\n` +
+      `Reset your password: ${p.resetUrl}\n\n` +
+      `This link expires in ${p.expiresMinutes} minutes.\n\n` +
+      `If you didn't request this, you can safely ignore this email — your password will not change.`,
+  };
+}

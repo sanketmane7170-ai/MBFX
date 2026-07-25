@@ -31,6 +31,7 @@ export class CopyFactoryListenerService implements OnModuleInit, OnModuleDestroy
   private readonly OVERLAP_MS = 2 * 60 * 1000; // re-scan window to catch late field updates
 
   private historyApi: any = null;
+  private tradingApi: any = null;
   private clientKey: string | null = null; // token the client was built for
   private since: Date | null = null; // high-water mark of the last scan
   private timer: NodeJS.Timeout | null = null;
@@ -65,25 +66,25 @@ export class CopyFactoryListenerService implements OnModuleInit, OnModuleDestroy
     }
   }
 
-  private async historyApiClient(): Promise<any | null> {
+  private async ensureClient(): Promise<boolean> {
     const token = this.settings.getToken();
-    if (!token) return null;
-    if (this.historyApi && this.clientKey === token) return this.historyApi;
+    if (!token) return false;
+    if (this.historyApi && this.clientKey === token) return true;
 
     const mod: any = await import('metaapi.cloud-sdk');
     const CopyFactory = mod.CopyFactory ?? (mod.default ?? mod).CopyFactory;
-    // No region pin — the history REST API is global and resolves each account's
-    // own region server-side (accounts may live outside the configured region).
+    // No region pin — these REST APIs are global and resolve each account's own
+    // region server-side (accounts may live outside the configured region).
     const copyFactory = new CopyFactory(token);
     this.historyApi = copyFactory.historyApi;
+    this.tradingApi = copyFactory.tradingApi ?? null;
     this.clientKey = token;
-    return this.historyApi;
+    return true;
   }
 
   private async poll(): Promise<void> {
     if (!this.settings.hasToken()) return;
-    const api = await this.historyApiClient();
-    if (!api) return;
+    if (!(await this.ensureClient())) return;
 
     // Map (strategyId | subscriberId) -> routing context. Keyed by both so a
     // receiver subscribed to several strategies routes each trade correctly.
@@ -98,6 +99,7 @@ export class CopyFactoryListenerService implements OnModuleInit, OnModuleDestroy
     if (!subs.length) return;
 
     const routes = new Map<string, RouteCtx>();
+    const subscriberIds = new Set<string>();
     for (const s of subs) {
       const key = `${s.copierConfig.copyfactoryStrategyId}|${s.copyfactorySubscriberId}`;
       routes.set(key, {
@@ -105,6 +107,7 @@ export class CopyFactoryListenerService implements OnModuleInit, OnModuleDestroy
         copierConfigId: s.copierConfigId,
         sourceAccountId: s.copierConfig.sourceAccountId,
       });
+      subscriberIds.add(s.copyfactorySubscriberId);
     }
 
     const now = new Date();
@@ -112,7 +115,7 @@ export class CopyFactoryListenerService implements OnModuleInit, OnModuleDestroy
       ? new Date(this.since.getTime() - this.OVERLAP_MS)
       : new Date(now.getTime() - this.BACKFILL_MS);
 
-    const txns: any[] = (await api.getSubscriptionTransactions(from, now)) ?? [];
+    const txns: any[] = (await this.historyApi.getSubscriptionTransactions(from, now)) ?? [];
     let ingested = 0;
     for (const t of txns) {
       const strategyId = t?.strategy?.id ?? t?.strategy?._id;
@@ -123,8 +126,44 @@ export class CopyFactoryListenerService implements OnModuleInit, OnModuleDestroy
       await this.monitoring.upsertCopyEvent(evt);
       ingested++;
     }
+
+    // Failed/rejected copies never produce a transaction — they surface as
+    // ERROR-level records in the CopyFactory subscriber log. Poll those and
+    // record them as FAILED events (which also triggers the copy-alert email).
+    const failed = await this.pollFailures(subs, routes, from, now).catch((e) => {
+      this.logger.warn(`Failure-log poll failed: ${(e as Error).message}`);
+      return 0;
+    });
+
     this.since = now;
-    if (ingested) this.logger.log(`Synced ${ingested} copy transaction(s) from CopyFactory`);
+    if (ingested || failed) {
+      this.logger.log(`Synced ${ingested} copy transaction(s), ${failed} failure(s) from CopyFactory`);
+    }
+  }
+
+  private async pollFailures(
+    subs: Array<{ copyfactorySubscriberId: string; copierConfig: { copyfactoryStrategyId: string } }>,
+    routes: Map<string, RouteCtx>,
+    from: Date,
+    to: Date,
+  ): Promise<number> {
+    if (!this.tradingApi?.getUserLog) return 0;
+    let recorded = 0;
+    for (const s of subs) {
+      const subId = s.copyfactorySubscriberId;
+      const ctx = routes.get(`${s.copierConfig.copyfactoryStrategyId}|${subId}`);
+      if (!ctx) continue;
+      // ERROR-level records only.
+      const logs: any[] =
+        (await this.tradingApi.getUserLog(subId, from, to, undefined, undefined, 'ERROR')) ?? [];
+      for (const r of logs) {
+        const evt = this.toFailedEvent(r, subId, ctx);
+        if (!evt) continue;
+        await this.monitoring.upsertCopyEvent(evt);
+        recorded++;
+      }
+    }
+    return recorded;
   }
 
   /** Map a CopyFactoryTransaction onto our CopyEvent shape. */
@@ -164,6 +203,34 @@ export class CopyFactoryListenerService implements OnModuleInit, OnModuleDestroy
       latencyMs,
       pnl,
       ts: t?.time ? new Date(t.time) : undefined,
+    };
+  }
+
+  /** Map an ERROR-level CopyFactory user-log record to a FAILED copy event. */
+  private toFailedEvent(r: any, subscriberId: string, ctx: RouteCtx): IngestCopyEvent | null {
+    const symbol: string | undefined = r?.symbol;
+    if (!symbol) return null; // only trade-related errors, skip generic noise
+
+    const time = r?.time ? new Date(r.time) : new Date();
+    const sideRaw = String(r?.side ?? '').toLowerCase();
+    const action: CopyAction = sideRaw === 'close' ? CopyAction.CLOSE : CopyAction.OPEN;
+    const side: Side = sideRaw === 'sell' ? Side.SELL : Side.BUY;
+    const posId = r?.positionId ? String(r.positionId) : '';
+    // User-log records carry no id, so synthesize a stable dedup key.
+    const externalId = `err:${subscriberId}:${time.getTime()}:${posId}:${symbol}`;
+
+    return {
+      externalId,
+      copierConfigId: ctx.copierConfigId,
+      sourceAccountId: ctx.sourceAccountId,
+      receiverAccountId: ctx.receiverAccountId,
+      sourceTicket: posId || externalId,
+      symbol,
+      side,
+      lots: 0,
+      action,
+      status: CopyStatus.FAILED,
+      ts: time,
     };
   }
 }

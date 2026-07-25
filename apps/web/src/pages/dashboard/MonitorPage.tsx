@@ -139,7 +139,11 @@ export default function MonitorPage() {
               <EmptyState
                 icon={<Activity className="h-10 w-10" />}
                 title="Waiting for copy activity"
-                description="When the source trades, copies appear here in real time. Use “Simulate trade” to try it."
+                description={
+                  runtime?.simulationEnabled
+                    ? 'When the source trades, copies appear here in real time. Use “Simulate trade” to try it.'
+                    : 'When the source account places a trade, the copy to each receiver appears here in real time.'
+                }
               />
             ) : (
               <div className="max-h-[560px] overflow-auto">

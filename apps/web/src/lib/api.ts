@@ -261,6 +261,14 @@ export const changePassword = (currentPassword: string, newPassword: string) =>
     method: 'POST',
     body: JSON.stringify({ currentPassword, newPassword }),
   });
+// Public reset flow — these do not require auth.
+export const forgotPassword = (email: string) =>
+  apiFetch<void>('/auth/forgot-password', { method: 'POST', body: JSON.stringify({ email }) });
+export const resetPassword = (email: string, token: string, newPassword: string) =>
+  apiFetch<void>('/auth/reset-password', {
+    method: 'POST',
+    body: JSON.stringify({ email, token, newPassword }),
+  });
 
 export interface Session {
   id: string;

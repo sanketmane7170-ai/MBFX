@@ -53,6 +53,10 @@ model User {
 
   hashedRefreshToken String?
 
+  // Self-service password reset (forgot-password): argon2 hash of a one-time token.
+  resetTokenHash      String?
+  resetTokenExpiresAt DateTime?
+
   createdById  String?
   createdBy    User?      @relation("UserCreator", fields: [createdById], references: [id])
   createdUsers User[]     @relation("UserCreator")

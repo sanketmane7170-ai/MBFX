@@ -4,7 +4,7 @@ import { Role, UserStatus } from '@prisma/client';
 import { createTransport, type Transporter } from 'nodemailer';
 import { PrismaService } from '../prisma/prisma.service';
 import { SettingsService, SmtpConfig } from '../settings/settings.service';
-import { copyAlertEmail, inviteEmail, resetEmail } from './templates';
+import { copyAlertEmail, inviteEmail, passwordResetLinkEmail, resetEmail } from './templates';
 
 export interface MailInput {
   to: string;
@@ -142,6 +142,19 @@ export class MailService {
   /** Notice that a super-admin reset this admin's password. */
   async sendPasswordResetNotice(email: string, newPassword: string): Promise<MailResult> {
     const { subject, html, text } = resetEmail({ email, password: newPassword, url: this.appUrl() });
+    return this.send({ to: email, subject, html, text });
+  }
+
+  /** Self-service reset: a link to choose a new password. */
+  async sendPasswordResetLink(email: string, token: string, expiresMinutes: number): Promise<MailResult> {
+    const base = this.appUrl();
+    const resetUrl = `${base ?? ''}/reset-password?token=${encodeURIComponent(token)}&email=${encodeURIComponent(email)}`;
+    const { subject, html, text } = passwordResetLinkEmail({
+      email,
+      url: base,
+      resetUrl,
+      expiresMinutes,
+    });
     return this.send({ to: email, subject, html, text });
   }
 
