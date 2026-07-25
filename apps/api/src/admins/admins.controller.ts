@@ -1,6 +1,7 @@
 import {
   Body,
   Controller,
+  Delete,
   Get,
   HttpCode,
   HttpStatus,
@@ -57,5 +58,14 @@ export class AdminsController {
     @CurrentUser('sub') actorId: string,
   ): Promise<void> {
     await this.admins.resetPassword(id, dto.password, actorId);
+  }
+
+  @Delete(':id')
+  @HttpCode(HttpStatus.NO_CONTENT)
+  async remove(
+    @Param('id', ParseUUIDPipe) id: string,
+    @CurrentUser('sub') actorId: string,
+  ): Promise<void> {
+    await this.admins.remove(id, actorId);
   }
 }

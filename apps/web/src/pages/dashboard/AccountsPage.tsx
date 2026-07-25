@@ -1,8 +1,10 @@
-import { useState } from 'react';
-import { Plus, Search, Server, Trash2 } from 'lucide-react';
+import { useEffect, useState } from 'react';
+import { Link } from 'react-router-dom';
+import { Pencil, Plus, Search, Server, Trash2 } from 'lucide-react';
 import { PageHeader } from '@/components/layout/DashboardLayout';
 import { Button } from '@/components/ui/button';
-import { Input, Switch } from '@/components/ui/form';
+import { Dialog } from '@/components/ui/dialog';
+import { Field, Input, Switch } from '@/components/ui/form';
 import {
   Badge,
   Card,
@@ -36,7 +38,47 @@ export default function AccountsPage() {
   const [addOpen, setAddOpen] = useState(false);
   const [toDelete, setToDelete] = useState<Account | null>(null);
   const [deleting, setDeleting] = useState(false);
+  const [editFor, setEditFor] = useState<Account | null>(null);
+  const [editLabel, setEditLabel] = useState('');
+  const [editServer, setEditServer] = useState('');
+  const [editPassword, setEditPassword] = useState('');
+  const [saving, setSaving] = useState(false);
   const [q, setQ] = useState('');
+
+  useEffect(() => {
+    if (editFor) {
+      setEditLabel(editFor.label);
+      setEditServer(editFor.server);
+      setEditPassword('');
+    }
+  }, [editFor]);
+
+  const saveEdit = async () => {
+    if (!editFor) return;
+    if (!editLabel.trim() || !editServer.trim()) {
+      toast('Name and server are required.', 'error');
+      return;
+    }
+    const body: { label?: string; server?: string; password?: string } = {};
+    if (editLabel.trim() !== editFor.label) body.label = editLabel.trim();
+    if (editServer.trim() !== editFor.server) body.server = editServer.trim();
+    if (editPassword.trim()) body.password = editPassword.trim();
+    if (Object.keys(body).length === 0) {
+      setEditFor(null);
+      return;
+    }
+    setSaving(true);
+    try {
+      await accountsApi.update(editFor.id, body);
+      toast('Account updated', 'success');
+      setEditFor(null);
+      reload();
+    } catch (e) {
+      toast(e instanceof Error ? e.message : 'Update failed', 'error');
+    } finally {
+      setSaving(false);
+    }
+  };
 
   const list = accounts ?? [];
   const connected = list.filter((a) => a.status === 'CONNECTED').length;
@@ -136,7 +178,11 @@ export default function AccountsPage() {
               <tbody>
                 {filtered.map((a) => (
                   <tr key={a.id} className="border-b border-gray-50 hover:bg-gray-50/60">
-                    <td className="px-4 py-3 font-medium text-gray-900">{a.label}</td>
+                    <td className="px-4 py-3 font-medium">
+                      <Link to={`/dashboard/accounts/${a.id}`} className="text-gray-900 hover:text-brand-700 hover:underline">
+                        {a.label}
+                      </Link>
+                    </td>
                     <td className="px-4 py-3 text-gray-500">{a.login}</td>
                     <td className="px-4 py-3">
                       <Badge tone="blue">{a.platform}</Badge>
@@ -151,7 +197,14 @@ export default function AccountsPage() {
                       <StatusBadge status={a.status} />
                     </td>
                     <td className="px-4 py-3">
-                      <div className="flex items-center justify-end">
+                      <div className="flex items-center justify-end gap-1">
+                        <button
+                          onClick={() => setEditFor(a)}
+                          className="rounded-md p-1.5 text-gray-400 hover:bg-gray-100 hover:text-gray-700"
+                          title="Edit"
+                        >
+                          <Pencil className="h-4 w-4" />
+                        </button>
                         <button
                           onClick={() => setToDelete(a)}
                           className="rounded-md p-1.5 text-gray-400 hover:bg-red-50 hover:text-red-600"
@@ -177,6 +230,45 @@ export default function AccountsPage() {
       </Card>
 
       <AddAccountDialog open={addOpen} onClose={() => setAddOpen(false)} onCreated={reload} />
+
+      <Dialog
+        open={!!editFor}
+        onClose={() => setEditFor(null)}
+        title="Edit account"
+        description={editFor ? `${editFor.login} · ${editFor.platform}` : undefined}
+        footer={
+          <>
+            <Button variant="secondary" onClick={() => setEditFor(null)} disabled={saving}>
+              Cancel
+            </Button>
+            <Button loading={saving} onClick={saveEdit}>
+              Save changes
+            </Button>
+          </>
+        }
+      >
+        <div className="space-y-4">
+          <Field label="Name">
+            <Input value={editLabel} onChange={(e) => setEditLabel(e.target.value)} placeholder="Account label" />
+          </Field>
+          <Field label="Broker server">
+            <Input value={editServer} onChange={(e) => setEditServer(e.target.value)} placeholder="e.g. ICMarkets-Live02" />
+          </Field>
+          <Field
+            label="Broker password"
+            hint="Leave blank to keep the current password. Stored encrypted."
+          >
+            <Input
+              type="password"
+              value={editPassword}
+              onChange={(e) => setEditPassword(e.target.value)}
+              placeholder="Enter to rotate the password"
+              autoComplete="new-password"
+            />
+          </Field>
+        </div>
+      </Dialog>
+
       <ConfirmDialog
         open={!!toDelete}
         onClose={() => setToDelete(null)}

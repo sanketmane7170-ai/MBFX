@@ -1,4 +1,4 @@
-import { Platform } from '@prisma/client';
+import { Platform, SizingMode } from '@prisma/client';
 
 /** DI token for the active copier provider (mock locally, MetaApi in prod). */
 export const COPIER_PROVIDER = Symbol('COPIER_PROVIDER');
@@ -18,6 +18,8 @@ export interface ProvisionAccountInput {
 }
 
 export interface SubscriptionRules {
+  /** How receiver lot size is derived. For FIXED_LOT, `multiplier` is the lot count. */
+  sizingMode: SizingMode;
   multiplier: number;
   reverse: boolean;
   copySl: boolean;
@@ -41,6 +43,12 @@ export interface CopierProvider {
   /** Provision a MetaTrader account connection. Returns its MetaApi account id. */
   provisionAccount(input: ProvisionAccountInput): Promise<{ metaapiAccountId: string }>;
   removeAccount(metaapiAccountId: string): Promise<void>;
+
+  /** Rotate broker credentials / server / name on an existing MetaApi account. */
+  updateAccountCredentials(
+    metaapiAccountId: string,
+    changes: { password?: string; server?: string; name?: string },
+  ): Promise<void>;
 
   /** Create a CopyFactory strategy (master). Returns its strategy id. */
   createStrategy(input: {

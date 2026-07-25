@@ -5,6 +5,7 @@ import {
   Logger,
   ServiceUnavailableException,
 } from '@nestjs/common';
+import { SizingMode } from '@prisma/client';
 import { SettingsService } from '../settings/settings.service';
 import {
   AddSubscriberInput,
@@ -94,6 +95,20 @@ export class MetaApiCopierProvider implements CopierProvider {
     await account.remove();
   }
 
+  async updateAccountCredentials(
+    metaapiAccountId: string,
+    changes: { password?: string; server?: string; name?: string },
+  ): Promise<void> {
+    const { metaApi } = await this.getClients();
+    const account = await metaApi.metatraderAccountApi.getAccount(metaapiAccountId);
+    // SDK call shape confirmed live during Phase 0 spike (see class header).
+    await account.update({
+      ...(changes.name != null ? { name: changes.name } : {}),
+      ...(changes.password != null ? { password: changes.password } : {}),
+      ...(changes.server != null ? { server: changes.server } : {}),
+    });
+  }
+
   async createStrategy(input: {
     metaapiAccountId: string;
     name: string;
@@ -142,15 +157,11 @@ export class MetaApiCopierProvider implements CopierProvider {
     const cfg = copyFactory.configurationApi;
     const existing = await cfg.getSubscriber(subscriberId).catch(() => null);
     const subs: any[] = existing?.subscriptions ?? [];
-    const updated = subs.map((s) => ({
-      ...s,
-      ...(rules.multiplier != null ? { multiplier: rules.multiplier } : {}),
-      ...(rules.reverse != null ? { reverse: rules.reverse } : {}),
-      ...(rules.symbolMapping
-        ? { symbolMapping: rules.symbolMapping.map((m) => ({ from: m.from, to: m.to })) }
-        : {}),
-      ...(rules.enabled != null ? { paused: !rules.enabled } : {}),
-    }));
+    const updated = subs.map((s) => {
+      const next = { ...s };
+      this.applyRules(next, rules);
+      return next;
+    });
     await cfg.updateSubscriber(subscriberId, {
       name: existing?.name ?? 'slave',
       subscriptions: updated,
@@ -183,12 +194,41 @@ export class MetaApiCopierProvider implements CopierProvider {
   }
 
   private buildSubscription(input: AddSubscriberInput): any {
-    const subscription: any = { strategyId: input.strategyId, multiplier: input.multiplier };
-    if (input.reverse) subscription.reverse = true;
-    if (input.symbolMapping?.length) {
-      subscription.symbolMapping = input.symbolMapping.map((m) => ({ from: m.from, to: m.to }));
-    }
+    const subscription: any = { strategyId: input.strategyId };
+    this.applyRules(subscription, input);
     return subscription;
+  }
+
+  /**
+   * Maps our rule set onto a CopyFactory subscription. Field names below match
+   * the CopyFactory subscription schema; the SL/TP + trade-size-scaling shapes
+   * are confirmed during the Phase 0 live spike (see class header).
+   */
+  private applyRules(
+    subscription: any,
+    rules: Partial<SubscriptionRules> & { enabled?: boolean },
+  ): void {
+    if (rules.multiplier != null) subscription.multiplier = rules.multiplier;
+    if (rules.reverse != null) subscription.reverse = rules.reverse;
+    if (rules.enabled != null) subscription.paused = !rules.enabled;
+    if (rules.symbolMapping) {
+      subscription.symbolMapping = rules.symbolMapping.map((m) => ({ from: m.from, to: m.to }));
+    }
+
+    // Lot sizing → CopyFactory trade-size scaling.
+    if (rules.sizingMode === SizingMode.BALANCE_RATIO) {
+      subscription.tradeSizeScalingMode = 'balance'; // proportional to relative balances
+    } else if (rules.sizingMode === SizingMode.FIXED_LOT) {
+      subscription.tradeSizeScalingMode = 'none'; // `multiplier` carries the fixed lot size
+    } else if (rules.sizingMode === SizingMode.MULTIPLIER) {
+      subscription.tradeSizeScalingMode = 'none';
+    }
+
+    // SL/TP mirroring — strip on the receiver when copying is disabled.
+    if (rules.copySl === false) subscription.removeStopLoss = true;
+    else if (rules.copySl === true) subscription.removeStopLoss = false;
+    if (rules.copyTp === false) subscription.removeTakeProfit = true;
+    else if (rules.copyTp === true) subscription.removeTakeProfit = false;
   }
 
   private async setPaused(subscriberId: string, paused: boolean): Promise<void> {

@@ -256,6 +256,11 @@ export async function login(email: string, password: string): Promise<AuthUser> 
 export const fetchMe = () => apiFetch<AuthUser>('/auth/me');
 export const logoutServer = () =>
   apiFetch<void>('/auth/logout', { method: 'POST' }).catch(() => undefined);
+export const changePassword = (currentPassword: string, newPassword: string) =>
+  apiFetch<void>('/auth/change-password', {
+    method: 'POST',
+    body: JSON.stringify({ currentPassword, newPassword }),
+  });
 
 // ---------------------------------------------------------------------------
 // Accounts
@@ -274,6 +279,8 @@ export const accountsApi = {
     apiFetch<Account>('/accounts', { method: 'POST', body: JSON.stringify(body) }),
   rename: (id: string, label: string) =>
     apiFetch<Account>(`/accounts/${id}`, { method: 'PATCH', body: JSON.stringify({ label }) }),
+  update: (id: string, body: { label?: string; password?: string; server?: string }) =>
+    apiFetch<Account>(`/accounts/${id}`, { method: 'PATCH', body: JSON.stringify(body) }),
   connect: (id: string) => apiFetch<Account>(`/accounts/${id}/connect`, { method: 'POST' }),
   disconnect: (id: string) => apiFetch<Account>(`/accounts/${id}/disconnect`, { method: 'POST' }),
   remove: (id: string) => apiFetch<void>(`/accounts/${id}`, { method: 'DELETE' }),
@@ -332,16 +339,78 @@ export const adminsApi = {
       method: 'POST',
       body: JSON.stringify({ password }),
     }),
+  remove: (id: string) => apiFetch<void>(`/admins/${id}`, { method: 'DELETE' }),
 };
 
 // ---------------------------------------------------------------------------
 // Monitoring
 // ---------------------------------------------------------------------------
+export interface AccountSnapshot {
+  id: string;
+  accountId: string;
+  balance: string;
+  equity: string;
+  margin: string;
+  openPositions: number;
+  ts: string;
+}
+
+export interface HistoryQuery {
+  status?: CopyStatus;
+  symbol?: string;
+  from?: string;
+  to?: string;
+  limit?: number;
+  offset?: number;
+}
+
 export const monitoringApi = {
   copierEvents: (id: string, limit = 100) =>
     apiFetch<CopyEvent[]>(`/copiers/${id}/copy-events?limit=${limit}`),
   accountEvents: (id: string, limit = 100) =>
     apiFetch<CopyEvent[]>(`/accounts/${id}/copy-events?limit=${limit}`),
+  snapshot: (id: string) => apiFetch<AccountSnapshot | null>(`/accounts/${id}/snapshot`),
+  history: (q: HistoryQuery = {}) => {
+    const p = new URLSearchParams();
+    Object.entries(q).forEach(([k, v]) => v != null && v !== '' && p.set(k, String(v)));
+    return apiFetch<{ items: CopyEvent[]; total: number }>(`/copy-events?${p.toString()}`);
+  },
+};
+
+// ---------------------------------------------------------------------------
+// Audit log (Super Admin) + runtime flags
+// ---------------------------------------------------------------------------
+export interface AuditLog {
+  id: string;
+  action: string;
+  entityType: string | null;
+  entityId: string | null;
+  meta: unknown;
+  ts: string;
+  user: { email: string } | null;
+}
+export interface AuditQuery {
+  action?: string;
+  entityType?: string;
+  from?: string;
+  to?: string;
+  limit?: number;
+  offset?: number;
+}
+export const auditApi = {
+  list: (q: AuditQuery = {}) => {
+    const p = new URLSearchParams();
+    Object.entries(q).forEach(([k, v]) => v != null && v !== '' && p.set(k, String(v)));
+    return apiFetch<{ items: AuditLog[]; total: number }>(`/audit-logs?${p.toString()}`);
+  },
+};
+
+export interface RuntimeInfo {
+  liveTrading: boolean;
+  simulationEnabled: boolean;
+}
+export const runtimeApi = {
+  info: () => apiFetch<RuntimeInfo>('/runtime'),
 };
 
 // Dev-only simulation (disabled server-side when METAAPI_TOKEN is set).

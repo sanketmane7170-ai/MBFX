@@ -4,9 +4,12 @@ import {
   Activity,
   ChevronDown,
   Copy,
+  History,
+  KeyRound,
   LayoutDashboard,
   LogOut,
   Menu,
+  ScrollText,
   Settings,
   ShieldCheck,
   SlidersHorizontal,
@@ -16,6 +19,7 @@ import { cn } from '@/lib/utils';
 import { getUser, logout, logoutServer } from '@/lib/api';
 import { ToastProvider } from '@/components/ui/toast';
 import { Avatar } from '@/components/ui/misc';
+import { ChangePasswordDialog } from '@/components/ChangePasswordDialog';
 
 export function PageHeader({
   title,
@@ -48,6 +52,7 @@ function UserMenu() {
   const user = getUser();
   const navigate = useNavigate();
   const [open, setOpen] = useState(false);
+  const [pwOpen, setPwOpen] = useState(false);
   const ref = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -89,13 +94,24 @@ function UserMenu() {
             <div className="text-xs text-brand-600">{user?.role}</div>
           </div>
           <button
-            onClick={onLogout}
+            onClick={() => {
+              setOpen(false);
+              setPwOpen(true);
+            }}
             className="flex w-full items-center gap-2 px-4 py-2.5 text-sm text-gray-700 hover:bg-gray-50"
+          >
+            <KeyRound className="h-4 w-4" /> Change password
+          </button>
+          <button
+            onClick={onLogout}
+            className="flex w-full items-center gap-2 border-t border-gray-100 px-4 py-2.5 text-sm text-gray-700 hover:bg-gray-50"
           >
             <LogOut className="h-4 w-4" /> Sign out
           </button>
         </div>
       )}
+
+      <ChangePasswordDialog open={pwOpen} onClose={() => setPwOpen(false)} />
     </div>
   );
 }
@@ -117,6 +133,7 @@ export default function DashboardLayout() {
       items: [
         { to: '/dashboard/copiers', label: 'Copiers', icon: Copy },
         { to: '/dashboard/monitor', label: 'Live Monitor', icon: Activity },
+        { to: '/dashboard/history', label: 'Copy History', icon: History },
       ],
     },
     ...(user?.role === 'SUPER_ADMIN'
@@ -125,6 +142,7 @@ export default function DashboardLayout() {
             label: 'Administration',
             items: [
               { to: '/dashboard/admins', label: 'Admins', icon: ShieldCheck },
+              { to: '/dashboard/audit', label: 'Audit Log', icon: ScrollText },
               { to: '/dashboard/settings', label: 'Settings', icon: Settings },
             ] as NavItem[],
           },

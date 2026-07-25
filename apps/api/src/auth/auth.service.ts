@@ -1,4 +1,5 @@
 import {
+  BadRequestException,
   Injectable,
   UnauthorizedException,
 } from '@nestjs/common';
@@ -39,10 +40,27 @@ export class AuthService {
 
     // Uniform failure to avoid leaking which part was wrong.
     const invalid = new UnauthorizedException('Invalid credentials');
-    if (!user || user.status === UserStatus.DISABLED) throw invalid;
+    if (!user || user.status === UserStatus.DISABLED) {
+      await this.audit.log({
+        userId: user?.id,
+        action: 'AUTH_LOGIN_FAILED',
+        entityType: 'User',
+        meta: { email: email.toLowerCase(), reason: user ? 'disabled' : 'unknown_user' },
+      });
+      throw invalid;
+    }
 
     const ok = await argon2.verify(user.passwordHash, password);
-    if (!ok) throw invalid;
+    if (!ok) {
+      await this.audit.log({
+        userId: user.id,
+        action: 'AUTH_LOGIN_FAILED',
+        entityType: 'User',
+        entityId: user.id,
+        meta: { email: email.toLowerCase(), reason: 'bad_password' },
+      });
+      throw invalid;
+    }
 
     const tokens = await this.issueTokens(user);
     await this.audit.log({
@@ -79,7 +97,14 @@ export class AuthService {
     const matches = await argon2.verify(user.hashedRefreshToken, refreshToken);
     if (!matches) throw invalid;
 
-    return this.issueTokens(user);
+    const tokens = await this.issueTokens(user);
+    await this.audit.log({
+      userId: user.id,
+      action: 'AUTH_TOKEN_REFRESH',
+      entityType: 'User',
+      entityId: user.id,
+    });
+    return tokens;
   }
 
   async logout(userId: string): Promise<void> {
@@ -90,6 +115,35 @@ export class AuthService {
     await this.audit.log({
       userId,
       action: 'AUTH_LOGOUT',
+      entityType: 'User',
+      entityId: userId,
+    });
+  }
+
+  /** Self-service password change. Verifies the current password, then rotates. */
+  async changePassword(
+    userId: string,
+    currentPassword: string,
+    newPassword: string,
+  ): Promise<void> {
+    const user = await this.prisma.user.findUnique({ where: { id: userId } });
+    if (!user) throw new UnauthorizedException();
+
+    const ok = await argon2.verify(user.passwordHash, currentPassword);
+    if (!ok) throw new BadRequestException('Current password is incorrect.');
+    if (await argon2.verify(user.passwordHash, newPassword)) {
+      throw new BadRequestException('New password must be different from the current one.');
+    }
+
+    const passwordHash = await argon2.hash(newPassword);
+    // Invalidate other sessions on password change.
+    await this.prisma.user.update({
+      where: { id: userId },
+      data: { passwordHash, hashedRefreshToken: null },
+    });
+    await this.audit.log({
+      userId,
+      action: 'AUTH_PASSWORD_CHANGED',
       entityType: 'User',
       entityId: userId,
     });

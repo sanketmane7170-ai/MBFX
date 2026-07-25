@@ -28,6 +28,9 @@ importers:
       '@nestjs/platform-socket.io':
         specifier: ^10.4.22
         version: 10.4.22(@nestjs/common@10.4.22(class-transformer@0.5.1)(class-validator@0.14.4)(reflect-metadata@0.2.2)(rxjs@7.8.2))(@nestjs/websockets@10.4.22)(bufferutil@4.0.9)(rxjs@7.8.2)(utf-8-validate@5.0.10)
+      '@nestjs/throttler':
+        specifier: ^6.5.0
+        version: 6.5.0(@nestjs/common@10.4.22(class-transformer@0.5.1)(class-validator@0.14.4)(reflect-metadata@0.2.2)(rxjs@7.8.2))(@nestjs/core@10.4.22)(reflect-metadata@0.2.2)
       '@nestjs/websockets':
         specifier: ^10.4.22
         version: 10.4.22(@nestjs/common@10.4.22(class-transformer@0.5.1)(class-validator@0.14.4)(reflect-metadata@0.2.2)(rxjs@7.8.2))(@nestjs/core@10.4.22)(@nestjs/platform-socket.io@10.4.22)(reflect-metadata@0.2.2)(rxjs@7.8.2)
@@ -43,6 +46,9 @@ importers:
       class-validator:
         specifier: ^0.14.1
         version: 0.14.4
+      helmet:
+        specifier: ^8.3.0
+        version: 8.3.0
       metaapi.cloud-sdk:
         specifier: ^29.3.3
         version: 29.3.3
@@ -112,7 +118,7 @@ importers:
         version: 6.30.4(react-dom@18.3.1(react@18.3.1))(react@18.3.1)
       socket.io-client:
         specifier: ^4.8.3
-        version: 4.8.3(bufferutil@4.0.9)(utf-8-validate@5.0.10)
+        version: 4.8.3
       tailwind-merge:
         specifier: ^2.6.0
         version: 2.6.1
@@ -128,7 +134,7 @@ importers:
         version: 18.3.7(@types/react@18.3.31)
       '@vitejs/plugin-react':
         specifier: ^4.3.4
-        version: 4.7.0(vite@5.4.21(@types/node@22.20.1)(terser@5.49.0))
+        version: 4.7.0(vite@5.4.21(@types/node@22.20.1))
       autoprefixer:
         specifier: ^10.4.20
         version: 10.5.4(postcss@8.5.20)
@@ -146,7 +152,7 @@ importers:
         version: 5.9.3
       vite:
         specifier: ^5.4.11
-        version: 5.4.21(@types/node@22.20.1)(terser@5.49.0)
+        version: 5.4.21(@types/node@22.20.1)
 
 packages:
 
@@ -512,6 +518,13 @@ packages:
     resolution: {integrity: sha512-4e8gxaCk7DhBxVUly2PjYL4xC2ifDFexCqq1/u4TtivLGXotVk0wHdYuPYe1tHTHuR1lsOkRbfOCpkdTnigLVg==}
     peerDependencies:
       typescript: '>=4.8.2'
+
+  '@nestjs/throttler@6.5.0':
+    resolution: {integrity: sha512-9j0ZRfH0QE1qyrj9JjIRDz5gQLPqq9yVC2nHsrosDVAfI5HHw08/aUAWx9DZLSdQf4HDkmhTTEGLrRFHENvchQ==}
+    peerDependencies:
+      '@nestjs/common': ^7.0.0 || ^8.0.0 || ^9.0.0 || ^10.0.0 || ^11.0.0
+      '@nestjs/core': ^7.0.0 || ^8.0.0 || ^9.0.0 || ^10.0.0 || ^11.0.0
+      reflect-metadata: ^0.1.13 || ^0.2.0
 
   '@nestjs/websockets@10.4.22':
     resolution: {integrity: sha512-OLd4i0Faq7vgdtB5vVUrJ54hWEtcXy9poJ6n7kbbh/5ms+KffUl+wwGsbe7uSXLrkoyI8xXU6fZPkFArI+XiRg==}
@@ -1794,6 +1807,10 @@ packages:
   hasown@2.0.4:
     resolution: {integrity: sha512-T2UbfbBEF32wiepXIsMlTW9+dDYC6wMh/t/vYA4tuOMKqWz/n3vr1NFSxQiyP+zk2mXsoMA/i/7qV6LKut1t1A==}
     engines: {node: '>= 0.4'}
+
+  helmet@8.3.0:
+    resolution: {integrity: sha512-Qgpiaws3Sm30Av8Eah6sjMCZZwjlBu+E68rhpCWBshY1lb09HtLwj5GviX0OyQIn+ulUS0iX0AxN5n3tLZzz1w==}
+    engines: {node: '>=18.0.0'}
 
   hmac-drbg@1.0.1:
     resolution: {integrity: sha512-Tti3gMqLdZfhOQY1Mzf/AanLiqh1WTiJgEj26ZuYQ9fbkLomzGchCws4FyrSd4VkpBfiNhaE1On+lOz894jvXg==}
@@ -3599,6 +3616,12 @@ snapshots:
     transitivePeerDependencies:
       - chokidar
 
+  '@nestjs/throttler@6.5.0(@nestjs/common@10.4.22(class-transformer@0.5.1)(class-validator@0.14.4)(reflect-metadata@0.2.2)(rxjs@7.8.2))(@nestjs/core@10.4.22)(reflect-metadata@0.2.2)':
+    dependencies:
+      '@nestjs/common': 10.4.22(class-transformer@0.5.1)(class-validator@0.14.4)(reflect-metadata@0.2.2)(rxjs@7.8.2)
+      '@nestjs/core': 10.4.22(@nestjs/common@10.4.22(class-transformer@0.5.1)(class-validator@0.14.4)(reflect-metadata@0.2.2)(rxjs@7.8.2))(@nestjs/platform-express@10.4.22)(@nestjs/websockets@10.4.22)(reflect-metadata@0.2.2)(rxjs@7.8.2)
+      reflect-metadata: 0.2.2
+
   '@nestjs/websockets@10.4.22(@nestjs/common@10.4.22(class-transformer@0.5.1)(class-validator@0.14.4)(reflect-metadata@0.2.2)(rxjs@7.8.2))(@nestjs/core@10.4.22)(@nestjs/platform-socket.io@10.4.22)(reflect-metadata@0.2.2)(rxjs@7.8.2)':
     dependencies:
       '@nestjs/common': 10.4.22(class-transformer@0.5.1)(class-validator@0.14.4)(reflect-metadata@0.2.2)(rxjs@7.8.2)
@@ -3871,7 +3894,7 @@ snapshots:
     dependencies:
       '@types/node': 22.20.1
 
-  '@vitejs/plugin-react@4.7.0(vite@5.4.21(@types/node@22.20.1)(terser@5.49.0))':
+  '@vitejs/plugin-react@4.7.0(vite@5.4.21(@types/node@22.20.1))':
     dependencies:
       '@babel/core': 7.29.7
       '@babel/plugin-transform-react-jsx-self': 7.29.7(@babel/core@7.29.7)
@@ -3879,7 +3902,7 @@ snapshots:
       '@rolldown/pluginutils': 1.0.0-beta.27
       '@types/babel__core': 7.20.5
       react-refresh: 0.17.0
-      vite: 5.4.21(@types/node@22.20.1)(terser@5.49.0)
+      vite: 5.4.21(@types/node@22.20.1)
     transitivePeerDependencies:
       - supports-color
 
@@ -4584,6 +4607,18 @@ snapshots:
       - supports-color
       - utf-8-validate
 
+  engine.io-client@6.6.6:
+    dependencies:
+      '@socket.io/component-emitter': 3.1.2
+      debug: 4.4.3
+      engine.io-parser: 5.2.3
+      ws: 8.21.1
+      xmlhttprequest-ssl: 2.1.2
+    transitivePeerDependencies:
+      - bufferutil
+      - supports-color
+      - utf-8-validate
+
   engine.io-client@6.6.6(bufferutil@4.0.9)(utf-8-validate@5.0.10):
     dependencies:
       '@socket.io/component-emitter': 3.1.2
@@ -5089,6 +5124,8 @@ snapshots:
   hasown@2.0.4:
     dependencies:
       function-bind: 1.1.2
+
+  helmet@8.3.0: {}
 
   hmac-drbg@1.0.1:
     dependencies:
@@ -6123,6 +6160,17 @@ snapshots:
       - supports-color
       - utf-8-validate
 
+  socket.io-client@4.8.3:
+    dependencies:
+      '@socket.io/component-emitter': 3.1.2
+      debug: 4.4.3
+      engine.io-client: 6.6.6
+      socket.io-parser: 4.2.7
+    transitivePeerDependencies:
+      - bufferutil
+      - supports-color
+      - utf-8-validate
+
   socket.io-client@4.8.3(bufferutil@4.0.9)(utf-8-validate@5.0.10):
     dependencies:
       '@socket.io/component-emitter': 3.1.2
@@ -6508,7 +6556,7 @@ snapshots:
 
   vary@1.1.2: {}
 
-  vite@5.4.21(@types/node@22.20.1)(terser@5.49.0):
+  vite@5.4.21(@types/node@22.20.1):
     dependencies:
       esbuild: 0.21.5
       postcss: 8.5.20
@@ -6516,7 +6564,6 @@ snapshots:
     optionalDependencies:
       '@types/node': 22.20.1
       fsevents: 2.3.3
-      terser: 5.49.0
 
   watchpack@2.5.2:
     dependencies:
@@ -6643,6 +6690,8 @@ snapshots:
     optionalDependencies:
       bufferutil: 4.0.9
       utf-8-validate: 5.0.10
+
+  ws@8.21.1: {}
 
   ws@8.21.1(bufferutil@4.0.9)(utf-8-validate@5.0.10):
     optionalDependencies:

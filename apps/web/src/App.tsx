@@ -5,10 +5,13 @@ import LoginPage from './pages/LoginPage';
 import DashboardLayout from './components/layout/DashboardLayout';
 import OverviewPage from './pages/dashboard/OverviewPage';
 import AccountsPage from './pages/dashboard/AccountsPage';
+import AccountDetailPage from './pages/dashboard/AccountDetailPage';
 import CopiersPage from './pages/dashboard/CopiersPage';
 import CopierDetailPage from './pages/dashboard/CopierDetailPage';
 import MonitorPage from './pages/dashboard/MonitorPage';
+import HistoryPage from './pages/dashboard/HistoryPage';
 import AdminsPage from './pages/dashboard/AdminsPage';
+import AuditPage from './pages/dashboard/AuditPage';
 import SettingsPage from './pages/dashboard/SettingsPage';
 import { getUser, isAuthenticated } from './lib/api';
 
@@ -36,14 +39,24 @@ export default function App() {
         >
           <Route index element={<OverviewPage />} />
           <Route path="accounts" element={<AccountsPage />} />
+          <Route path="accounts/:id" element={<AccountDetailPage />} />
           <Route path="copiers" element={<CopiersPage />} />
           <Route path="copiers/:id" element={<CopierDetailPage />} />
           <Route path="monitor" element={<MonitorPage />} />
+          <Route path="history" element={<HistoryPage />} />
           <Route
             path="admins"
             element={
               <RequireSuperAdmin>
                 <AdminsPage />
+              </RequireSuperAdmin>
+            }
+          />
+          <Route
+            path="audit"
+            element={
+              <RequireSuperAdmin>
+                <AuditPage />
               </RequireSuperAdmin>
             }
           />

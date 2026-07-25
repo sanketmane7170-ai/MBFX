@@ -1,4 +1,5 @@
 import {
+  BadRequestException,
   ConflictException,
   Injectable,
   NotFoundException,
@@ -127,5 +128,33 @@ export class AdminsService {
     });
     // Best-effort notice — never blocks the reset.
     await this.mail.sendPasswordResetNotice(admin.email, password);
+  }
+
+  async remove(id: string, actorId: string): Promise<void> {
+    if (id === actorId) {
+      throw new BadRequestException('You cannot delete your own account.');
+    }
+    // Only ADMINs are deletable (findFirst with role guard excludes super-admins).
+    const admin = await this.prisma.user.findFirst({
+      where: { id, role: Role.ADMIN },
+      select: { id: true, email: true },
+    });
+    if (!admin) throw new NotFoundException('Admin not found');
+
+    const owned = await this.prisma.account.count({ where: { createdById: id } });
+    if (owned > 0) {
+      throw new ConflictException(
+        `This admin still owns ${owned} account(s). Remove or reassign them before deleting.`,
+      );
+    }
+
+    await this.prisma.user.delete({ where: { id } });
+    await this.audit.log({
+      userId: actorId,
+      action: 'ADMIN_DELETED',
+      entityType: 'User',
+      entityId: id,
+      meta: { email: admin.email },
+    });
   }
 }

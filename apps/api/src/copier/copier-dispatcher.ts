@@ -34,6 +34,12 @@ export class CopierDispatcher implements CopierProvider {
   removeAccount(id: string) {
     return this.active().removeAccount(id);
   }
+  updateAccountCredentials(
+    metaapiAccountId: string,
+    changes: { password?: string; server?: string; name?: string },
+  ) {
+    return this.active().updateAccountCredentials(metaapiAccountId, changes);
+  }
   createStrategy(input: { metaapiAccountId: string; name: string }) {
     return this.active().createStrategy(input);
   }

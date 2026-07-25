@@ -28,4 +28,16 @@ export class UpdateAccountDto {
   @IsString()
   @MinLength(1)
   label?: string;
+
+  /** Rotate the broker/trade password (re-encrypted at rest). */
+  @IsOptional()
+  @IsString()
+  @MinLength(1)
+  password?: string;
+
+  /** Change the broker server. */
+  @IsOptional()
+  @IsString()
+  @MinLength(1)
+  server?: string;
 }

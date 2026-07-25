@@ -31,6 +31,15 @@ export class MockCopierProvider implements CopierProvider {
     this.logger.log(`removeAccount ${metaapiAccountId}`);
   }
 
+  async updateAccountCredentials(
+    metaapiAccountId: string,
+    changes: { password?: string; server?: string; name?: string },
+  ): Promise<void> {
+    this.logger.log(
+      `updateAccountCredentials ${metaapiAccountId} (${Object.keys(changes).join(', ')})`,
+    );
+  }
+
   async createStrategy(input: {
     metaapiAccountId: string;
     name: string;

@@ -10,7 +10,7 @@ import {
   Patch,
   Post,
 } from '@nestjs/common';
-import { CurrentUser } from '../common/decorators/current-user.decorator';
+import { AuthPayload, CurrentUser } from '../common/decorators/current-user.decorator';
 import { AccountsService } from './accounts.service';
 import { CreateAccountDto, UpdateAccountDto } from './dto/account.dto';
 
@@ -19,43 +19,45 @@ export class AccountsController {
   constructor(private readonly accounts: AccountsService) {}
 
   @Post()
-  create(@Body() dto: CreateAccountDto, @CurrentUser('sub') actorId: string) {
-    return this.accounts.create(dto, actorId);
+  create(@Body() dto: CreateAccountDto, @CurrentUser() actor: AuthPayload) {
+    return this.accounts.create(dto, actor);
   }
 
   @Get()
-  findAll() {
-    return this.accounts.findAll();
+  findAll(@CurrentUser() actor: AuthPayload) {
+    return this.accounts.findAll(actor);
   }
 
   @Get(':id')
-  findOne(@Param('id', ParseUUIDPipe) id: string) {
-    return this.accounts.findOne(id);
+  findOne(@Param('id', ParseUUIDPipe) id: string, @CurrentUser() actor: AuthPayload) {
+    return this.accounts.findOne(id, actor);
   }
 
   @Patch(':id')
-  rename(
+  update(
     @Param('id', ParseUUIDPipe) id: string,
     @Body() dto: UpdateAccountDto,
-    @CurrentUser('sub') actorId: string,
+    @CurrentUser() actor: AuthPayload,
   ) {
-    if (dto.label === undefined) return this.accounts.findOne(id);
-    return this.accounts.rename(id, dto.label, actorId);
+    if (dto.label === undefined && dto.password === undefined && dto.server === undefined) {
+      return this.accounts.findOne(id, actor);
+    }
+    return this.accounts.update(id, dto, actor);
   }
 
   @Post(':id/connect')
-  connect(@Param('id', ParseUUIDPipe) id: string, @CurrentUser('sub') actorId: string) {
-    return this.accounts.setConnected(id, true, actorId);
+  connect(@Param('id', ParseUUIDPipe) id: string, @CurrentUser() actor: AuthPayload) {
+    return this.accounts.setConnected(id, true, actor);
   }
 
   @Post(':id/disconnect')
-  disconnect(@Param('id', ParseUUIDPipe) id: string, @CurrentUser('sub') actorId: string) {
-    return this.accounts.setConnected(id, false, actorId);
+  disconnect(@Param('id', ParseUUIDPipe) id: string, @CurrentUser() actor: AuthPayload) {
+    return this.accounts.setConnected(id, false, actor);
   }
 
   @Delete(':id')
   @HttpCode(HttpStatus.NO_CONTENT)
-  async remove(@Param('id', ParseUUIDPipe) id: string, @CurrentUser('sub') actorId: string) {
-    await this.accounts.remove(id, actorId);
+  async remove(@Param('id', ParseUUIDPipe) id: string, @CurrentUser() actor: AuthPayload) {
+    await this.accounts.remove(id, actor);
   }
 }

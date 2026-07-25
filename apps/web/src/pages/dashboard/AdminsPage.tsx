@@ -1,9 +1,10 @@
 import { useState } from 'react';
-import { KeyRound, Plus, ShieldCheck } from 'lucide-react';
+import { KeyRound, Plus, ShieldCheck, Trash2 } from 'lucide-react';
 import { PageHeader } from '@/components/layout/DashboardLayout';
 import { Button } from '@/components/ui/button';
 import { Field, Input, Switch } from '@/components/ui/form';
 import { Dialog } from '@/components/ui/dialog';
+import { ConfirmDialog } from '@/components/ConfirmDialog';
 import {
   Card,
   EmptyState,
@@ -23,8 +24,25 @@ export default function AdminsPage() {
   const [resetFor, setResetFor] = useState<Admin | null>(null);
   const [newPass, setNewPass] = useState('');
   const [resetting, setResetting] = useState(false);
+  const [deleteFor, setDeleteFor] = useState<Admin | null>(null);
+  const [deleting, setDeleting] = useState(false);
 
   const list = admins ?? [];
+
+  const doDelete = async () => {
+    if (!deleteFor) return;
+    setDeleting(true);
+    try {
+      await adminsApi.remove(deleteFor.id);
+      toast('Admin deleted', 'success');
+      setDeleteFor(null);
+      reload();
+    } catch (e) {
+      toast(e instanceof Error ? e.message : 'Delete failed', 'error');
+    } finally {
+      setDeleting(false);
+    }
+  };
 
   const toggleStatus = async (a: Admin, active: boolean) => {
     try {
@@ -116,7 +134,7 @@ export default function AdminsPage() {
                       />
                     </td>
                     <td className="px-4 py-3">
-                      <div className="flex justify-end">
+                      <div className="flex justify-end gap-1">
                         <button
                           onClick={() => {
                             setResetFor(a);
@@ -125,6 +143,12 @@ export default function AdminsPage() {
                           className="inline-flex items-center gap-1.5 rounded-md px-2 py-1.5 text-xs font-medium text-gray-500 hover:bg-gray-100 hover:text-gray-800"
                         >
                           <KeyRound className="h-3.5 w-3.5" /> Reset password
+                        </button>
+                        <button
+                          onClick={() => setDeleteFor(a)}
+                          className="inline-flex items-center gap-1.5 rounded-md px-2 py-1.5 text-xs font-medium text-red-500 hover:bg-red-50 hover:text-red-600"
+                        >
+                          <Trash2 className="h-3.5 w-3.5" /> Delete
                         </button>
                       </div>
                     </td>
@@ -163,6 +187,22 @@ export default function AdminsPage() {
           />
         </Field>
       </Dialog>
+
+      <ConfirmDialog
+        open={!!deleteFor}
+        onClose={() => setDeleteFor(null)}
+        onConfirm={doDelete}
+        title="Delete admin"
+        confirmLabel="Delete"
+        danger
+        loading={deleting}
+        message={
+          <>
+            Permanently delete <span className="font-medium text-gray-900">{deleteFor?.email}</span>?
+            They must own no accounts. This cannot be undone.
+          </>
+        }
+      />
     </>
   );
 }

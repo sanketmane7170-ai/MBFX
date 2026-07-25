@@ -10,8 +10,9 @@ import { AccountStatus, Prisma } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import { AuditService } from '../common/audit/audit.service';
 import { CryptoService } from '../common/crypto/crypto.service';
+import { Actor, ownedBy } from '../common/scope';
 import { COPIER_PROVIDER, CopierProvider } from '../copier/copier.types';
-import { CreateAccountDto } from './dto/account.dto';
+import { CreateAccountDto, UpdateAccountDto } from './dto/account.dto';
 
 const ACCOUNT_VIEW = {
   id: true,
@@ -46,8 +47,9 @@ export class AccountsService {
     return this.config.get<number>('MAX_ACCOUNTS', 50);
   }
 
-  async create(dto: CreateAccountDto, actorId: string): Promise<AccountView> {
-    const count = await this.prisma.account.count();
+  async create(dto: CreateAccountDto, actor: Actor): Promise<AccountView> {
+    const actorId = actor.sub;
+    const count = await this.prisma.account.count({ where: ownedBy(actor) });
     if (count >= this.maxAccounts) {
       throw new ConflictException(`Account limit reached (max ${this.maxAccounts}).`);
     }
@@ -88,24 +90,26 @@ export class AccountsService {
     }
   }
 
-  findAll(): Promise<AccountView[]> {
+  findAll(actor: Actor): Promise<AccountView[]> {
     return this.prisma.account.findMany({
+      where: ownedBy(actor),
       select: ACCOUNT_VIEW,
       orderBy: { createdAt: 'desc' },
     });
   }
 
-  async findOne(id: string): Promise<AccountView> {
-    const account = await this.prisma.account.findUnique({
-      where: { id },
+  async findOne(id: string, actor: Actor): Promise<AccountView> {
+    const account = await this.prisma.account.findFirst({
+      where: { id, ...ownedBy(actor) },
       select: ACCOUNT_VIEW,
     });
     if (!account) throw new NotFoundException('Account not found');
     return account;
   }
 
-  async rename(id: string, label: string, actorId: string): Promise<AccountView> {
-    await this.findOne(id);
+  async rename(id: string, label: string, actor: Actor): Promise<AccountView> {
+    await this.findOne(id, actor);
+    const actorId = actor.sub;
     const account = await this.prisma.account.update({
       where: { id },
       data: { label },
@@ -120,8 +124,45 @@ export class AccountsService {
     return account;
   }
 
-  async setConnected(id: string, connected: boolean, actorId: string): Promise<AccountView> {
-    await this.findOne(id);
+  /** Update label and/or rotate broker credentials (password/server). */
+  async update(id: string, dto: UpdateAccountDto, actor: Actor): Promise<AccountView> {
+    await this.findOne(id, actor); // guards ownership
+    const actorId = actor.sub;
+
+    const rotating = dto.password != null || dto.server != null;
+    if (rotating) {
+      const full = await this.prisma.account.findUnique({ where: { id } });
+      await this.copier.updateAccountCredentials(full!.metaapiAccountId, {
+        password: dto.password,
+        server: dto.server,
+        name: dto.label,
+      });
+    }
+
+    const account = await this.prisma.account.update({
+      where: { id },
+      data: {
+        ...(dto.label != null ? { label: dto.label } : {}),
+        ...(dto.server != null ? { server: dto.server } : {}),
+        ...(dto.password != null
+          ? { encryptedPassword: this.crypto.encrypt(dto.password) }
+          : {}),
+      },
+      select: ACCOUNT_VIEW,
+    });
+    await this.audit.log({
+      userId: actorId,
+      action: dto.password || dto.server ? 'ACCOUNT_CREDENTIALS_UPDATED' : 'ACCOUNT_RENAMED',
+      entityType: 'Account',
+      entityId: id,
+      meta: { fields: Object.keys(dto).filter((k) => k !== 'password') },
+    });
+    return account;
+  }
+
+  async setConnected(id: string, connected: boolean, actor: Actor): Promise<AccountView> {
+    await this.findOne(id, actor);
+    const actorId = actor.sub;
     const account = await this.prisma.account.update({
       where: { id },
       data: {
@@ -138,9 +179,10 @@ export class AccountsService {
     return account;
   }
 
-  async remove(id: string, actorId: string): Promise<void> {
-    const account = await this.prisma.account.findUnique({
-      where: { id },
+  async remove(id: string, actor: Actor): Promise<void> {
+    const actorId = actor.sub;
+    const account = await this.prisma.account.findFirst({
+      where: { id, ...ownedBy(actor) },
       include: {
         sourceForConfig: { include: { subscriptions: true } },
         receiverSubscriptions: true,

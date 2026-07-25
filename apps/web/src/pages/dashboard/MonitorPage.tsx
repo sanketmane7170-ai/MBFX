@@ -8,7 +8,7 @@ import { Badge, Card, EmptyState, LoadingBlock } from '@/components/ui/misc';
 import { useToast } from '@/components/ui/toast';
 import { useAsync } from '@/hooks/useAsync';
 import { connectStream, subscribe } from '@/lib/socket';
-import { copierApi, monitoringApi, simApi, type CopyEvent } from '@/lib/api';
+import { copierApi, monitoringApi, runtimeApi, simApi, type CopyEvent } from '@/lib/api';
 
 function time(ts: string): string {
   return new Date(ts).toLocaleTimeString();
@@ -17,6 +17,7 @@ function time(ts: string): string {
 export default function MonitorPage() {
   const toast = useToast();
   const { data: copiers, loading } = useAsync(() => copierApi.list(), []);
+  const { data: runtime } = useAsync(() => runtimeApi.info(), []);
   const [configId, setConfigId] = useState('');
   const [events, setEvents] = useState<CopyEvent[]>([]);
   const [connected, setConnected] = useState(false);
@@ -117,14 +118,16 @@ export default function MonitorPage() {
                 ))}
               </Select>
             </div>
-            <div className="flex items-center gap-2">
-              <Button variant="secondary" size="sm" onClick={simulateOpen}>
-                <Play className="h-3.5 w-3.5" /> Simulate trade
-              </Button>
-              <Button variant="secondary" size="sm" onClick={simulateClose} disabled={!lastTicket}>
-                <Square className="h-3.5 w-3.5" /> Close last
-              </Button>
-            </div>
+            {runtime?.simulationEnabled && (
+              <div className="flex items-center gap-2">
+                <Button variant="secondary" size="sm" onClick={simulateOpen}>
+                  <Play className="h-3.5 w-3.5" /> Simulate trade
+                </Button>
+                <Button variant="secondary" size="sm" onClick={simulateClose} disabled={!lastTicket}>
+                  <Square className="h-3.5 w-3.5" /> Close last
+                </Button>
+              </div>
+            )}
           </div>
 
           <Card>

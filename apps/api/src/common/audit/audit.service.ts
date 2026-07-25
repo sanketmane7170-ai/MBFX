@@ -32,4 +32,43 @@ export class AuditService {
       this.logger.error(`Failed to write audit log for ${entry.action}`, err as Error);
     }
   }
+
+  /** Paginated, filterable audit trail (super-admin view). */
+  async list(q: {
+    action?: string;
+    entityType?: string;
+    from?: string;
+    to?: string;
+    limit?: number;
+    offset?: number;
+  }): Promise<{ items: unknown[]; total: number }> {
+    const where: Prisma.AuditLogWhereInput = {
+      ...(q.action ? { action: q.action } : {}),
+      ...(q.entityType ? { entityType: q.entityType } : {}),
+      ...(q.from || q.to
+        ? { ts: { gte: q.from ? new Date(q.from) : undefined, lte: q.to ? new Date(q.to) : undefined } }
+        : {}),
+    };
+    const take = Math.min(q.limit ?? 50, 200);
+    const skip = q.offset ?? 0;
+    const [items, total] = await this.prisma.$transaction([
+      this.prisma.auditLog.findMany({
+        where,
+        orderBy: { ts: 'desc' },
+        take,
+        skip,
+        select: {
+          id: true,
+          action: true,
+          entityType: true,
+          entityId: true,
+          meta: true,
+          ts: true,
+          user: { select: { email: true } },
+        },
+      }),
+      this.prisma.auditLog.count({ where }),
+    ]);
+    return { items, total };
+  }
 }

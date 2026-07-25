@@ -1,7 +1,8 @@
-import { Injectable } from '@nestjs/common';
+import { Injectable, NotFoundException } from '@nestjs/common';
 import { CopyEvent, CopyStatus, Prisma } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import { MailService } from '../mail/mail.service';
+import { Actor, ownedBy } from '../common/scope';
 import { StreamGateway } from './stream.gateway';
 import { IngestCopyEvent, IngestSnapshot } from './monitoring.types';
 
@@ -68,7 +69,24 @@ export class MonitoringService {
     return row;
   }
 
-  copyEventsForConfig(configId: string, q: EventsQuery): Promise<CopyEvent[]> {
+  private async assertOwnsConfig(configId: string, actor: Actor): Promise<void> {
+    const owns = await this.prisma.copierConfig.findFirst({
+      where: { id: configId, ...ownedBy(actor) },
+      select: { id: true },
+    });
+    if (!owns) throw new NotFoundException('Copier not found');
+  }
+
+  private async assertOwnsAccount(accountId: string, actor: Actor): Promise<void> {
+    const owns = await this.prisma.account.findFirst({
+      where: { id: accountId, ...ownedBy(actor) },
+      select: { id: true },
+    });
+    if (!owns) throw new NotFoundException('Account not found');
+  }
+
+  async copyEventsForConfig(configId: string, q: EventsQuery, actor: Actor): Promise<CopyEvent[]> {
+    await this.assertOwnsConfig(configId, actor);
     const where: Prisma.CopyEventWhereInput = { copierConfigId: configId };
     this.applyRange(where, q);
     return this.prisma.copyEvent.findMany({
@@ -78,7 +96,8 @@ export class MonitoringService {
     });
   }
 
-  copyEventsForAccount(accountId: string, q: EventsQuery): Promise<CopyEvent[]> {
+  async copyEventsForAccount(accountId: string, q: EventsQuery, actor: Actor): Promise<CopyEvent[]> {
+    await this.assertOwnsAccount(accountId, actor);
     const where: Prisma.CopyEventWhereInput = {
       OR: [{ sourceAccountId: accountId }, { receiverAccountId: accountId }],
     };
@@ -90,11 +109,36 @@ export class MonitoringService {
     });
   }
 
-  latestSnapshot(accountId: string) {
+  async latestSnapshot(accountId: string, actor: Actor) {
+    await this.assertOwnsAccount(accountId, actor);
     return this.prisma.accountSnapshot.findFirst({
       where: { accountId },
       orderBy: { ts: 'desc' },
     });
+  }
+
+  /** Owner-scoped copy-event history across all the actor's copiers, with filters + paging. */
+  async history(
+    actor: Actor,
+    q: { from?: string; to?: string; status?: CopyStatus; symbol?: string; limit?: number; offset?: number },
+  ): Promise<{ items: CopyEvent[]; total: number }> {
+    const mine = await this.prisma.copierConfig.findMany({
+      where: ownedBy(actor),
+      select: { id: true },
+    });
+    const where: Prisma.CopyEventWhereInput = {
+      copierConfigId: { in: mine.map((c) => c.id) },
+      ...(q.status ? { status: q.status } : {}),
+      ...(q.symbol ? { symbol: { contains: q.symbol, mode: 'insensitive' } } : {}),
+    };
+    this.applyRange(where, q);
+    const take = Math.min(q.limit ?? 100, 500);
+    const skip = q.offset ?? 0;
+    const [items, total] = await this.prisma.$transaction([
+      this.prisma.copyEvent.findMany({ where, orderBy: { ts: 'desc' }, take, skip }),
+      this.prisma.copyEvent.count({ where }),
+    ]);
+    return { items, total };
   }
 
   private applyRange(where: Prisma.CopyEventWhereInput, q: EventsQuery): void {

@@ -7,6 +7,7 @@ import { ConfigService } from '@nestjs/config';
 import { CopyAction, CopyStatus, SizingMode, Side } from '@prisma/client';
 import { randomInt } from 'node:crypto';
 import { PrismaService } from '../prisma/prisma.service';
+import { SettingsService } from '../settings/settings.service';
 import { MonitoringService } from './monitoring.service';
 import { SimulateOpenDto } from './dto/simulate-open.dto';
 
@@ -21,26 +22,47 @@ export class SimulationService {
     private readonly prisma: PrismaService,
     private readonly monitoring: MonitoringService,
     private readonly config: ConfigService,
+    private readonly settings: SettingsService,
   ) {}
 
   private ensureDev(): void {
-    const token = this.config.get<string>('METAAPI_TOKEN');
-    if (token && token.trim().length > 0) {
+    // Disabled whenever a real MetaApi token is active — whether set via env OR
+    // saved in Settings (DB). Also hard-off in production regardless of token.
+    const envToken = this.config.get<string>('METAAPI_TOKEN');
+    const prod = this.config.get<string>('NODE_ENV') === 'production';
+    if (prod || (envToken && envToken.trim().length > 0) || this.settings.hasToken()) {
       throw new ForbiddenException(
         'Simulation is disabled while the real MetaApi provider is active.',
       );
     }
   }
 
-  private static computeLots(mode: SizingMode, sourceLots: number, multiplier: number): number {
+  private static computeLots(
+    mode: SizingMode,
+    sourceLots: number,
+    multiplier: number,
+    balanceRatio = 1,
+  ): number {
     switch (mode) {
       case SizingMode.FIXED_LOT:
         return round2(multiplier);
       case SizingMode.MULTIPLIER:
         return round2(sourceLots * multiplier);
+      case SizingMode.BALANCE_RATIO:
+        return round2(sourceLots * balanceRatio);
       default:
         return round2(sourceLots);
     }
+  }
+
+  /** Latest known balance for an account (from snapshots), for balance-ratio sizing. */
+  private async balanceOf(accountId: string): Promise<number | null> {
+    const snap = await this.prisma.accountSnapshot.findFirst({
+      where: { accountId },
+      orderBy: { ts: 'desc' },
+      select: { balance: true },
+    });
+    return snap ? Number(snap.balance) : null;
   }
 
   private static mapSymbol(mapping: unknown, symbol: string): string {
@@ -68,11 +90,19 @@ export class SimulationService {
     const lots = dto.lots ?? 1.0;
     const sourceTicket = dto.sourceTicket ?? String(randomInt(10_000_000, 99_999_999));
 
+    const sourceBalance = (await this.balanceOf(config.sourceAccountId)) ?? 10_000;
+
     for (const sub of config.subscriptions) {
+      let balanceRatio = 1;
+      if (sub.sizingMode === SizingMode.BALANCE_RATIO) {
+        const receiverBalance = (await this.balanceOf(sub.receiverAccountId)) ?? sourceBalance;
+        balanceRatio = sourceBalance > 0 ? receiverBalance / sourceBalance : 1;
+      }
       const receiverLots = SimulationService.computeLots(
         sub.sizingMode,
         lots,
         Number(sub.multiplier),
+        balanceRatio,
       );
       const effectiveSide = sub.reverse ? flip(side) : side;
       const mappedSymbol = SimulationService.mapSymbol(sub.symbolMapping, symbol);

@@ -10,6 +10,7 @@ import { ConfigService } from '@nestjs/config';
 import { Prisma, ReceiverStatus, SizingMode } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import { AuditService } from '../common/audit/audit.service';
+import { Actor, isSuper, ownedBy } from '../common/scope';
 import { COPIER_PROVIDER, CopierProvider, SymbolMap } from '../copier/copier.types';
 import { CreateCopierDto, UpdateCopierDto } from './dto/copier.dto';
 import { AddReceiverDto, UpdateReceiverDto } from './dto/receiver.dto';
@@ -78,31 +79,38 @@ export class CopiersService {
     return mapping?.map((m) => ({ from: m.from, to: m.to }));
   }
 
+  /** Subscription ownership filter (via its parent copier config). */
+  private subScope(actor: Actor): Record<string, unknown> {
+    return isSuper(actor) ? {} : { copierConfig: { createdById: actor.sub } };
+  }
+
   // -------- Configs --------
-  listConfigs(): Promise<CopierView[]> {
+  listConfigs(actor: Actor): Promise<CopierView[]> {
     return this.prisma.copierConfig.findMany({
+      where: ownedBy(actor),
       select: COPIER_VIEW,
       orderBy: { createdAt: 'desc' },
     });
   }
 
-  async getConfig(id: string) {
-    const config = await this.prisma.copierConfig.findUnique({
-      where: { id },
+  async getConfig(id: string, actor: Actor) {
+    const config = await this.prisma.copierConfig.findFirst({
+      where: { id, ...ownedBy(actor) },
       select: COPIER_DETAIL,
     });
     if (!config) throw new NotFoundException('Copier not found');
     return config;
   }
 
-  async createConfig(dto: CreateCopierDto, actorId: string): Promise<CopierView> {
-    const count = await this.prisma.copierConfig.count();
+  async createConfig(dto: CreateCopierDto, actor: Actor): Promise<CopierView> {
+    const actorId = actor.sub;
+    const count = await this.prisma.copierConfig.count({ where: ownedBy(actor) });
     if (count >= this.maxCopiers) {
       throw new ConflictException(`Copier limit reached (max ${this.maxCopiers}).`);
     }
 
-    const source = await this.prisma.account.findUnique({
-      where: { id: dto.sourceAccountId },
+    const source = await this.prisma.account.findFirst({
+      where: { id: dto.sourceAccountId, ...ownedBy(actor) },
     });
     if (!source) throw new NotFoundException('Source account not found');
 
@@ -142,9 +150,10 @@ export class CopiersService {
     }
   }
 
-  async updateConfig(id: string, dto: UpdateCopierDto, actorId: string): Promise<CopierView> {
-    const config = await this.prisma.copierConfig.findUnique({
-      where: { id },
+  async updateConfig(id: string, dto: UpdateCopierDto, actor: Actor): Promise<CopierView> {
+    const actorId = actor.sub;
+    const config = await this.prisma.copierConfig.findFirst({
+      where: { id, ...ownedBy(actor) },
       include: { subscriptions: true },
     });
     if (!config) throw new NotFoundException('Copier not found');
@@ -173,9 +182,10 @@ export class CopiersService {
     return updated;
   }
 
-  async deleteConfig(id: string, actorId: string): Promise<void> {
-    const config = await this.prisma.copierConfig.findUnique({
-      where: { id },
+  async deleteConfig(id: string, actor: Actor): Promise<void> {
+    const actorId = actor.sub;
+    const config = await this.prisma.copierConfig.findFirst({
+      where: { id, ...ownedBy(actor) },
       include: { subscriptions: true },
     });
     if (!config) throw new NotFoundException('Copier not found');
@@ -193,9 +203,10 @@ export class CopiersService {
     });
   }
 
-  async closeAll(id: string, actorId: string): Promise<{ closed: number }> {
-    const config = await this.prisma.copierConfig.findUnique({
-      where: { id },
+  async closeAll(id: string, actor: Actor): Promise<{ closed: number }> {
+    const actorId = actor.sub;
+    const config = await this.prisma.copierConfig.findFirst({
+      where: { id, ...ownedBy(actor) },
       include: { sourceAccount: true, subscriptions: { include: { receiverAccount: true } } },
     });
     if (!config) throw new NotFoundException('Copier not found');
@@ -218,17 +229,20 @@ export class CopiersService {
   async addReceiver(
     configId: string,
     dto: AddReceiverDto,
-    actorId: string,
+    actor: Actor,
   ): Promise<SubscriptionView> {
-    const config = await this.prisma.copierConfig.findUnique({ where: { id: configId } });
+    const actorId = actor.sub;
+    const config = await this.prisma.copierConfig.findFirst({
+      where: { id: configId, ...ownedBy(actor) },
+    });
     if (!config) throw new NotFoundException('Copier not found');
 
     if (dto.receiverAccountId === config.sourceAccountId) {
       throw new BadRequestException('The source account cannot also be a receiver.');
     }
 
-    const receiver = await this.prisma.account.findUnique({
-      where: { id: dto.receiverAccountId },
+    const receiver = await this.prisma.account.findFirst({
+      where: { id: dto.receiverAccountId, ...ownedBy(actor) },
     });
     if (!receiver) throw new NotFoundException('Receiver account not found');
 
@@ -248,6 +262,7 @@ export class CopiersService {
     if (dup) throw new ConflictException('This account is already a receiver in this copier.');
 
     const rules = {
+      sizingMode: dto.sizingMode ?? SizingMode.MULTIPLIER,
       multiplier: dto.multiplier ?? 1,
       reverse: dto.reverse ?? false,
       copySl: dto.copySl ?? true,
@@ -296,9 +311,12 @@ export class CopiersService {
   async updateReceiver(
     subId: string,
     dto: UpdateReceiverDto,
-    actorId: string,
+    actor: Actor,
   ): Promise<SubscriptionView> {
-    const existing = await this.prisma.subscription.findUnique({ where: { id: subId } });
+    const actorId = actor.sub;
+    const existing = await this.prisma.subscription.findFirst({
+      where: { id: subId, ...this.subScope(actor) },
+    });
     if (!existing) throw new NotFoundException('Receiver not found');
 
     const mapping = CopiersService.normalizeMapping(dto.symbolMapping);
@@ -322,6 +340,7 @@ export class CopiersService {
     });
 
     await this.copier.updateSubscriber(existing.copyfactorySubscriberId, {
+      sizingMode: dto.sizingMode,
       multiplier: dto.multiplier,
       reverse: dto.reverse,
       copySl: dto.copySl,
@@ -341,9 +360,12 @@ export class CopiersService {
   async setReceiverEnabled(
     subId: string,
     enabled: boolean,
-    actorId: string,
+    actor: Actor,
   ): Promise<SubscriptionView> {
-    const existing = await this.prisma.subscription.findUnique({ where: { id: subId } });
+    const actorId = actor.sub;
+    const existing = await this.prisma.subscription.findFirst({
+      where: { id: subId, ...this.subScope(actor) },
+    });
     if (!existing) throw new NotFoundException('Receiver not found');
 
     if (enabled) await this.copier.resumeSubscription(existing.copyfactorySubscriberId);
@@ -363,8 +385,11 @@ export class CopiersService {
     return sub;
   }
 
-  async removeReceiver(subId: string, actorId: string): Promise<void> {
-    const sub = await this.prisma.subscription.findUnique({ where: { id: subId } });
+  async removeReceiver(subId: string, actor: Actor): Promise<void> {
+    const actorId = actor.sub;
+    const sub = await this.prisma.subscription.findFirst({
+      where: { id: subId, ...this.subScope(actor) },
+    });
     if (!sub) throw new NotFoundException('Receiver not found');
 
     await this.safeRemoveSubscriber(sub.copyfactorySubscriberId);
