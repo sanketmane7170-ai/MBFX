@@ -233,13 +233,19 @@ function SmtpCard() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [status]);
 
-  const payload = () => ({
+  // Connection-only fields — what the /smtp/test endpoint accepts.
+  const connPayload = () => ({
     host: host.trim(),
     port: Number(port) || 587,
     secure,
     user: user.trim(),
     password: password.trim() || undefined,
     fromName: fromName.trim() || undefined,
+  });
+
+  // Full config for save — adds alert settings.
+  const savePayload = () => ({
+    ...connPayload(),
     alertEmail: alertEmail.trim() || undefined,
     alertsEnabled,
   });
@@ -248,7 +254,7 @@ function SmtpCard() {
     setTesting(true);
     setResult(null);
     try {
-      const r = await settingsApi.smtpTest(payload());
+      const r = await settingsApi.smtpTest(connPayload());
       setResult(r);
     } catch (e) {
       setResult({ ok: false, message: e instanceof Error ? e.message : 'Test failed' });
@@ -265,7 +271,7 @@ function SmtpCard() {
     setSending(true);
     setResult(null);
     try {
-      const r = await settingsApi.smtpTest({ ...payload(), to: testTo.trim() });
+      const r = await settingsApi.smtpTest({ ...connPayload(), to: testTo.trim() });
       setResult(r);
       if (r.ok) toast('Test email sent.', 'success');
     } catch (e) {
@@ -286,7 +292,7 @@ function SmtpCard() {
     }
     setSaving(true);
     try {
-      await settingsApi.smtpSet(payload());
+      await settingsApi.smtpSet(savePayload());
       toast('Email settings saved.', 'success');
       setPassword('');
       setResult(null);
