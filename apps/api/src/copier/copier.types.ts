@@ -34,6 +34,15 @@ export interface AddSubscriberInput extends SubscriptionRules {
   strategyId: string;
 }
 
+/** Live financials + connection state of a MetaTrader account. */
+export interface AccountState {
+  balance: number;
+  equity: number;
+  margin: number;
+  openPositions: number;
+  connected: boolean;
+}
+
 /**
  * Abstraction over the copy engine. Two implementations:
  *  - MockCopierProvider   (local dev / tests — no external calls)
@@ -70,4 +79,11 @@ export interface CopierProvider {
 
   /** Emergency: close all open positions on an account. */
   closeAll(metaapiAccountId: string): Promise<void>;
+
+  /**
+   * Live balance/equity/margin/open-positions for an account, for periodic
+   * snapshots + connection reconciliation. Returns null when unavailable
+   * (e.g. the mock provider, or no live data).
+   */
+  getAccountState(metaapiAccountId: string): Promise<AccountState | null>;
 }

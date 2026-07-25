@@ -8,6 +8,7 @@ import {
 import { SizingMode } from '@prisma/client';
 import { SettingsService } from '../settings/settings.service';
 import {
+  AccountState,
   AddSubscriberInput,
   CopierProvider,
   ProvisionAccountInput,
@@ -26,6 +27,8 @@ import {
 export class MetaApiCopierProvider implements CopierProvider {
   private readonly logger = new Logger(MetaApiCopierProvider.name);
   private clients: { token: string; region: string; metaApi: any; copyFactory: any } | null = null;
+  /** Cached RPC connections per MetaApi account id, reused across snapshot polls. */
+  private readonly rpc = new Map<string, any>();
 
   constructor(private readonly settings: SettingsService) {}
 
@@ -216,6 +219,46 @@ export class MetaApiCopierProvider implements CopierProvider {
       await connection.closePosition(p.id, {}).catch(() => undefined);
     }
     await connection.close?.();
+  }
+
+  async getAccountState(metaapiAccountId: string): Promise<AccountState | null> {
+    const { metaApi } = await this.getClients();
+    try {
+      let conn = this.rpc.get(metaapiAccountId);
+      if (!conn) {
+        const account = await metaApi.metatraderAccountApi.getAccount(metaapiAccountId);
+        conn = account.getRPCConnection();
+        await conn.connect();
+        // waitSynchronized can be slow on first connect; bound it so a stuck
+        // account never blocks the whole poll.
+        await Promise.race([
+          conn.waitSynchronized(),
+          new Promise((_, rej) => setTimeout(() => rej(new Error('sync timeout')), 25_000)),
+        ]);
+        this.rpc.set(metaapiAccountId, conn);
+      }
+      const info = await conn.getAccountInformation();
+      const positions = await conn.getPositions().catch(() => []);
+      return {
+        balance: Number(info?.balance ?? 0),
+        equity: Number(info?.equity ?? 0),
+        margin: Number(info?.margin ?? 0),
+        openPositions: Array.isArray(positions) ? positions.length : 0,
+        connected: true,
+      };
+    } catch (e) {
+      // Drop the (possibly dead) cached connection so the next tick reconnects.
+      const stale = this.rpc.get(metaapiAccountId);
+      if (stale) {
+        try {
+          await stale.close?.();
+        } catch {
+          /* ignore */
+        }
+        this.rpc.delete(metaapiAccountId);
+      }
+      throw e;
+    }
   }
 
   private buildSubscription(input: AddSubscriberInput): any {

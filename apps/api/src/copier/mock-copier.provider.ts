@@ -1,6 +1,7 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { randomUUID } from 'node:crypto';
 import {
+  AccountState,
   AddSubscriberInput,
   CopierProvider,
   ProvisionAccountInput,
@@ -85,5 +86,10 @@ export class MockCopierProvider implements CopierProvider {
 
   async closeAll(metaapiAccountId: string): Promise<void> {
     this.logger.log(`closeAll ${metaapiAccountId}`);
+  }
+
+  // No live broker connection in the mock — the snapshot poller skips it.
+  async getAccountState(_metaapiAccountId: string): Promise<AccountState | null> {
+    return null;
   }
 }

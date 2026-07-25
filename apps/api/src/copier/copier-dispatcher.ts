@@ -64,4 +64,7 @@ export class CopierDispatcher implements CopierProvider {
   closeAll(metaapiAccountId: string) {
     return this.active().closeAll(metaapiAccountId);
   }
+  getAccountState(metaapiAccountId: string) {
+    return this.active().getAccountState(metaapiAccountId);
+  }
 }
