@@ -9,6 +9,7 @@ import {
   LayoutDashboard,
   LogOut,
   Menu,
+  MonitorSmartphone,
   ScrollText,
   Settings,
   ShieldCheck,
@@ -20,6 +21,7 @@ import { getUser, logout, logoutServer } from '@/lib/api';
 import { ToastProvider } from '@/components/ui/toast';
 import { Avatar } from '@/components/ui/misc';
 import { ChangePasswordDialog } from '@/components/ChangePasswordDialog';
+import { SessionsDialog } from '@/components/SessionsDialog';
 
 export function PageHeader({
   title,
@@ -53,6 +55,7 @@ function UserMenu() {
   const navigate = useNavigate();
   const [open, setOpen] = useState(false);
   const [pwOpen, setPwOpen] = useState(false);
+  const [sessionsOpen, setSessionsOpen] = useState(false);
   const ref = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -103,6 +106,15 @@ function UserMenu() {
             <KeyRound className="h-4 w-4" /> Change password
           </button>
           <button
+            onClick={() => {
+              setOpen(false);
+              setSessionsOpen(true);
+            }}
+            className="flex w-full items-center gap-2 px-4 py-2.5 text-sm text-gray-700 hover:bg-gray-50"
+          >
+            <MonitorSmartphone className="h-4 w-4" /> Active sessions
+          </button>
+          <button
             onClick={onLogout}
             className="flex w-full items-center gap-2 border-t border-gray-100 px-4 py-2.5 text-sm text-gray-700 hover:bg-gray-50"
           >
@@ -112,6 +124,7 @@ function UserMenu() {
       )}
 
       <ChangePasswordDialog open={pwOpen} onClose={() => setPwOpen(false)} />
+      <SessionsDialog open={sessionsOpen} onClose={() => setSessionsOpen(false)} />
     </div>
   );
 }

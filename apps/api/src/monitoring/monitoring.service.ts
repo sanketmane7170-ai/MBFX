@@ -79,7 +79,7 @@ export class MonitoringService {
 
   private async assertOwnsAccount(accountId: string, actor: Actor): Promise<void> {
     const owns = await this.prisma.account.findFirst({
-      where: { id: accountId, ...ownedBy(actor) },
+      where: { id: accountId, ...ownedBy(actor), deletedAt: null },
       select: { id: true },
     });
     if (!owns) throw new NotFoundException('Account not found');

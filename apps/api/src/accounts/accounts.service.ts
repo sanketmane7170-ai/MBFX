@@ -49,7 +49,7 @@ export class AccountsService {
 
   async create(dto: CreateAccountDto, actor: Actor): Promise<AccountView> {
     const actorId = actor.sub;
-    const count = await this.prisma.account.count({ where: ownedBy(actor) });
+    const count = await this.prisma.account.count({ where: { ...ownedBy(actor), deletedAt: null } });
     if (count >= this.maxAccounts) {
       throw new ConflictException(`Account limit reached (max ${this.maxAccounts}).`);
     }
@@ -92,7 +92,7 @@ export class AccountsService {
 
   findAll(actor: Actor): Promise<AccountView[]> {
     return this.prisma.account.findMany({
-      where: ownedBy(actor),
+      where: { ...ownedBy(actor), deletedAt: null },
       select: ACCOUNT_VIEW,
       orderBy: { createdAt: 'desc' },
     });
@@ -100,7 +100,7 @@ export class AccountsService {
 
   async findOne(id: string, actor: Actor): Promise<AccountView> {
     const account = await this.prisma.account.findFirst({
-      where: { id, ...ownedBy(actor) },
+      where: { id, ...ownedBy(actor), deletedAt: null },
       select: ACCOUNT_VIEW,
     });
     if (!account) throw new NotFoundException('Account not found');
@@ -182,7 +182,7 @@ export class AccountsService {
   async remove(id: string, actor: Actor): Promise<void> {
     const actorId = actor.sub;
     const account = await this.prisma.account.findFirst({
-      where: { id, ...ownedBy(actor) },
+      where: { id, ...ownedBy(actor), deletedAt: null },
       include: {
         sourceForConfig: { include: { subscriptions: true } },
         receiverSubscriptions: true,
@@ -202,7 +202,11 @@ export class AccountsService {
     }
     await this.safeRemoveAccount(account.metaapiAccountId);
 
-    await this.prisma.account.delete({ where: { id } }); // cascades config + subscriptions
+    // Copier configs/subscriptions are external + cheaply recreatable → hard-remove.
+    // The account row is SOFT-deleted (recoverable) and its copy-event history is preserved.
+    await this.prisma.copierConfig.deleteMany({ where: { sourceAccountId: id } }); // cascades subs
+    await this.prisma.subscription.deleteMany({ where: { receiverAccountId: id } });
+    await this.prisma.account.update({ where: { id }, data: { deletedAt: new Date() } });
     await this.audit.log({
       userId: actorId,
       action: 'ACCOUNT_DELETED',

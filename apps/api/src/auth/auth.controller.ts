@@ -1,9 +1,14 @@
 import {
   Body,
   Controller,
+  Delete,
   Get,
+  Headers,
   HttpCode,
   HttpStatus,
+  Ip,
+  Param,
+  ParseUUIDPipe,
   Post,
 } from '@nestjs/common';
 import { Throttle } from '@nestjs/throttler';
@@ -26,8 +31,8 @@ export class AuthController {
   @Public()
   @Post('login')
   @HttpCode(HttpStatus.OK)
-  login(@Body() dto: LoginDto) {
-    return this.auth.login(dto.email, dto.password);
+  login(@Body() dto: LoginDto, @Ip() ip: string, @Headers('user-agent') ua?: string) {
+    return this.auth.login(dto.email, dto.password, { ip, userAgent: ua });
   }
 
   @Public()
@@ -39,8 +44,28 @@ export class AuthController {
 
   @Post('logout')
   @HttpCode(HttpStatus.NO_CONTENT)
-  async logout(@CurrentUser('sub') userId: string): Promise<void> {
-    await this.auth.logout(userId);
+  async logout(@CurrentUser() user: AuthPayload): Promise<void> {
+    await this.auth.logout(user.sub, user.sid);
+  }
+
+  @Get('sessions')
+  sessions(@CurrentUser() user: AuthPayload) {
+    return this.auth.listSessions(user.sub, user.sid);
+  }
+
+  @Post('sessions/revoke-others')
+  @HttpCode(HttpStatus.NO_CONTENT)
+  async revokeOthers(@CurrentUser() user: AuthPayload): Promise<void> {
+    await this.auth.revokeOtherSessions(user.sub, user.sid);
+  }
+
+  @Delete('sessions/:id')
+  @HttpCode(HttpStatus.NO_CONTENT)
+  async revokeSession(
+    @Param('id', ParseUUIDPipe) id: string,
+    @CurrentUser() user: AuthPayload,
+  ): Promise<void> {
+    await this.auth.revokeSession(user.sub, id);
   }
 
   @Post('change-password')

@@ -5,6 +5,8 @@ import { AuthPayload } from '../common/decorators/current-user.decorator';
 
 export interface RefreshPayload {
   sub: string;
+  /** Session id this refresh token belongs to. */
+  sid: string;
 }
 
 @Injectable()

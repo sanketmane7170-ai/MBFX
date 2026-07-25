@@ -60,11 +60,28 @@ model User {
   auditLogs      AuditLog[]
   createdAccounts Account[]      @relation("AccountCreator")
   createdCopiers  CopierConfig[] @relation("CopierCreator")
+  sessions        Session[]
 
   createdAt    DateTime   @default(now())
   updatedAt    DateTime   @updatedAt
 
   @@map("users")
+}
+
+/// One row per signed-in device/session (refresh-token backed).
+model Session {
+  id          String    @id @default(uuid())
+  userId      String
+  user        User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  hashedToken String
+  userAgent   String?
+  ip          String?
+  createdAt   DateTime  @default(now())
+  lastUsedAt  DateTime  @default(now())
+  revokedAt   DateTime?
+
+  @@index([userId])
+  @@map("sessions")
 }
 
 model AuditLog {
@@ -128,7 +145,9 @@ model Account {
 
   createdAt         DateTime      @default(now())
   updatedAt         DateTime      @updatedAt
+  deletedAt         DateTime?     // soft-delete: non-null = removed (recoverable)
 
+  @@index([deletedAt])
   @@map("accounts")
 }
 

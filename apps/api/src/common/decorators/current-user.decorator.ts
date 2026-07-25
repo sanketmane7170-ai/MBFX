@@ -6,6 +6,8 @@ export interface AuthPayload {
   sub: string;
   email: string;
   role: Role;
+  /** Session id (present on tokens issued by the session-backed flow). */
+  sid?: string;
 }
 
 export const CurrentUser = createParamDecorator(

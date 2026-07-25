@@ -110,7 +110,7 @@ export class CopiersService {
     }
 
     const source = await this.prisma.account.findFirst({
-      where: { id: dto.sourceAccountId, ...ownedBy(actor) },
+      where: { id: dto.sourceAccountId, ...ownedBy(actor), deletedAt: null },
     });
     if (!source) throw new NotFoundException('Source account not found');
 
@@ -242,7 +242,7 @@ export class CopiersService {
     }
 
     const receiver = await this.prisma.account.findFirst({
-      where: { id: dto.receiverAccountId, ...ownedBy(actor) },
+      where: { id: dto.receiverAccountId, ...ownedBy(actor), deletedAt: null },
     });
     if (!receiver) throw new NotFoundException('Receiver account not found');
 

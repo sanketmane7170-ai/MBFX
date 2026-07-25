@@ -91,15 +91,16 @@ export class AdminsService {
     await this.findOne(id); // guards role + existence
     const admin = await this.prisma.user.update({
       where: { id },
-      data: {
-        status,
-        // Disabling revokes the active session immediately.
-        ...(status === UserStatus.DISABLED
-          ? { hashedRefreshToken: null }
-          : {}),
-      },
+      data: { status },
       select: ADMIN_VIEW,
     });
+    // Disabling revokes all active sessions immediately.
+    if (status === UserStatus.DISABLED) {
+      await this.prisma.session.updateMany({
+        where: { userId: id, revokedAt: null },
+        data: { revokedAt: new Date() },
+      });
+    }
     await this.audit.log({
       userId: actorId,
       action: status === UserStatus.DISABLED ? 'ADMIN_DISABLED' : 'ADMIN_ENABLED',
@@ -116,9 +117,11 @@ export class AdminsService {
   ): Promise<void> {
     const admin = await this.findOne(id);
     const passwordHash = await argon2.hash(password);
-    await this.prisma.user.update({
-      where: { id },
-      data: { passwordHash, hashedRefreshToken: null },
+    await this.prisma.user.update({ where: { id }, data: { passwordHash } });
+    // Sign the admin out of all devices.
+    await this.prisma.session.updateMany({
+      where: { userId: id, revokedAt: null },
+      data: { revokedAt: new Date() },
     });
     await this.audit.log({
       userId: actorId,
@@ -141,7 +144,7 @@ export class AdminsService {
     });
     if (!admin) throw new NotFoundException('Admin not found');
 
-    const owned = await this.prisma.account.count({ where: { createdById: id } });
+    const owned = await this.prisma.account.count({ where: { createdById: id, deletedAt: null } });
     if (owned > 0) {
       throw new ConflictException(
         `This admin still owns ${owned} account(s). Remove or reassign them before deleting.`,

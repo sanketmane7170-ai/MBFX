@@ -14,6 +14,11 @@ export interface AuthTokens {
   refreshToken: string;
 }
 
+export interface SessionMeta {
+  userAgent?: string;
+  ip?: string;
+}
+
 export interface PublicUser {
   id: string;
   email: string;
@@ -33,7 +38,7 @@ export class AuthService {
     private readonly audit: AuditService,
   ) {}
 
-  async login(email: string, password: string): Promise<LoginResult> {
+  async login(email: string, password: string, meta: SessionMeta = {}): Promise<LoginResult> {
     const user = await this.prisma.user.findUnique({
       where: { email: email.toLowerCase() },
     });
@@ -62,7 +67,12 @@ export class AuthService {
       throw invalid;
     }
 
-    const tokens = await this.issueTokens(user);
+    // Open a new session (one per device) and issue tokens bound to it.
+    const session = await this.prisma.session.create({
+      data: { userId: user.id, hashedToken: '', userAgent: meta.userAgent, ip: meta.ip },
+    });
+    const tokens = await this.issueTokens(user, session.id);
+
     await this.audit.log({
       userId: user.id,
       action: 'AUTH_LOGIN',
@@ -76,45 +86,85 @@ export class AuthService {
   async refresh(refreshToken: string): Promise<AuthTokens> {
     const invalid = new UnauthorizedException('Invalid refresh token');
 
-    let payload: { sub: string };
+    let payload: { sub: string; sid: string };
     try {
       payload = await this.tokens.verifyRefresh(refreshToken);
     } catch {
       throw invalid;
     }
 
-    const user = await this.prisma.user.findUnique({
-      where: { id: payload.sub },
-    });
-    if (
-      !user ||
-      user.status === UserStatus.DISABLED ||
-      !user.hashedRefreshToken
-    ) {
+    const session = await this.prisma.session.findUnique({ where: { id: payload.sid } });
+    if (!session || session.revokedAt || session.userId !== payload.sub || !session.hashedToken) {
       throw invalid;
     }
 
-    const matches = await argon2.verify(user.hashedRefreshToken, refreshToken);
+    const user = await this.prisma.user.findUnique({ where: { id: payload.sub } });
+    if (!user || user.status === UserStatus.DISABLED) throw invalid;
+
+    const matches = await argon2.verify(session.hashedToken, refreshToken);
     if (!matches) throw invalid;
 
-    const tokens = await this.issueTokens(user);
-    await this.audit.log({
-      userId: user.id,
-      action: 'AUTH_TOKEN_REFRESH',
-      entityType: 'User',
-      entityId: user.id,
+    const tokens = await this.issueTokens(user, session.id);
+    await this.prisma.session.update({
+      where: { id: session.id },
+      data: { lastUsedAt: new Date() },
     });
     return tokens;
   }
 
-  async logout(userId: string): Promise<void> {
-    await this.prisma.user.update({
-      where: { id: userId },
-      data: { hashedRefreshToken: null },
-    });
+  async logout(userId: string, sid?: string): Promise<void> {
+    // Revoke just this device's session (fall back to all if sid is unknown).
+    if (sid) {
+      await this.prisma.session.updateMany({
+        where: { id: sid, userId, revokedAt: null },
+        data: { revokedAt: new Date() },
+      });
+    } else {
+      await this.prisma.session.updateMany({
+        where: { userId, revokedAt: null },
+        data: { revokedAt: new Date() },
+      });
+    }
     await this.audit.log({
       userId,
       action: 'AUTH_LOGOUT',
+      entityType: 'User',
+      entityId: userId,
+    });
+  }
+
+  // ---- Session management ----
+  async listSessions(userId: string, currentSid?: string) {
+    const sessions = await this.prisma.session.findMany({
+      where: { userId, revokedAt: null },
+      orderBy: { lastUsedAt: 'desc' },
+      select: { id: true, userAgent: true, ip: true, createdAt: true, lastUsedAt: true },
+    });
+    return sessions.map((s) => ({ ...s, current: s.id === currentSid }));
+  }
+
+  async revokeSession(userId: string, sessionId: string): Promise<void> {
+    await this.prisma.session.updateMany({
+      where: { id: sessionId, userId, revokedAt: null },
+      data: { revokedAt: new Date() },
+    });
+    await this.audit.log({
+      userId,
+      action: 'AUTH_SESSION_REVOKED',
+      entityType: 'Session',
+      entityId: sessionId,
+    });
+  }
+
+  /** Revoke every session except the caller's current one. */
+  async revokeOtherSessions(userId: string, currentSid?: string): Promise<void> {
+    await this.prisma.session.updateMany({
+      where: { userId, revokedAt: null, ...(currentSid ? { id: { not: currentSid } } : {}) },
+      data: { revokedAt: new Date() },
+    });
+    await this.audit.log({
+      userId,
+      action: 'AUTH_SESSIONS_REVOKED_OTHERS',
       entityType: 'User',
       entityId: userId,
     });
@@ -136,10 +186,11 @@ export class AuthService {
     }
 
     const passwordHash = await argon2.hash(newPassword);
-    // Invalidate other sessions on password change.
-    await this.prisma.user.update({
-      where: { id: userId },
-      data: { passwordHash, hashedRefreshToken: null },
+    await this.prisma.user.update({ where: { id: userId }, data: { passwordHash } });
+    // Invalidate every session on password change (sign out all devices).
+    await this.prisma.session.updateMany({
+      where: { userId, revokedAt: null },
+      data: { revokedAt: new Date() },
     });
     await this.audit.log({
       userId,
@@ -155,19 +206,20 @@ export class AuthService {
     return AuthService.toPublicUser(user);
   }
 
-  /** Issues an access + refresh pair and persists the hashed refresh token (rotation). */
-  private async issueTokens(user: User): Promise<AuthTokens> {
+  /** Issues an access + refresh pair bound to a session, and rotates the stored hash. */
+  private async issueTokens(user: User, sessionId: string): Promise<AuthTokens> {
     const accessToken = await this.tokens.signAccess({
       sub: user.id,
       email: user.email,
       role: user.role,
+      sid: sessionId,
     });
-    const refreshToken = await this.tokens.signRefresh({ sub: user.id });
+    const refreshToken = await this.tokens.signRefresh({ sub: user.id, sid: sessionId });
 
-    const hashedRefreshToken = await argon2.hash(refreshToken);
-    await this.prisma.user.update({
-      where: { id: user.id },
-      data: { hashedRefreshToken },
+    const hashedToken = await argon2.hash(refreshToken);
+    await this.prisma.session.update({
+      where: { id: sessionId },
+      data: { hashedToken },
     });
 
     return { accessToken, refreshToken };

@@ -262,6 +262,20 @@ export const changePassword = (currentPassword: string, newPassword: string) =>
     body: JSON.stringify({ currentPassword, newPassword }),
   });
 
+export interface Session {
+  id: string;
+  userAgent: string | null;
+  ip: string | null;
+  createdAt: string;
+  lastUsedAt: string;
+  current: boolean;
+}
+export const sessionsApi = {
+  list: () => apiFetch<Session[]>('/auth/sessions'),
+  revoke: (id: string) => apiFetch<void>(`/auth/sessions/${id}`, { method: 'DELETE' }),
+  revokeOthers: () => apiFetch<void>('/auth/sessions/revoke-others', { method: 'POST' }),
+};
+
 // ---------------------------------------------------------------------------
 // Accounts
 // ---------------------------------------------------------------------------
