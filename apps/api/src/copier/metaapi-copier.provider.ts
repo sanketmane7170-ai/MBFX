@@ -57,6 +57,9 @@ export class MetaApiCopierProvider implements CopierProvider {
       magic: 0,
       reliability: 'high',
       region,
+      // Enable both roles so any account can be a source (strategy) and/or a
+      // receiver (subscriber) in CopyFactory. Required for copying to work.
+      copyFactoryRoles: ['SUBSCRIBER', 'PROVIDER'],
     });
     await account.deploy();
     await account.waitConnected();
@@ -81,6 +84,7 @@ export class MetaApiCopierProvider implements CopierProvider {
     const strategyId = generated.id ?? generated;
     await cfg.updateStrategy(strategyId, {
       name: input.name,
+      description: input.name, // required by CopyFactory
       accountId: input.metaapiAccountId,
     });
     return { strategyId };
@@ -145,7 +149,7 @@ export class MetaApiCopierProvider implements CopierProvider {
     await connection.waitSynchronized();
     const positions: any[] = await connection.getPositions();
     for (const p of positions) {
-      await connection.closePosition(p.id).catch(() => undefined);
+      await connection.closePosition(p.id, {}).catch(() => undefined);
     }
     await connection.close?.();
   }
