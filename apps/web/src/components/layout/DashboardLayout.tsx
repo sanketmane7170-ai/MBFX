@@ -205,8 +205,11 @@ export default function DashboardLayout() {
             ))}
           </nav>
 
-          <div className="border-t border-gray-100 px-5 py-3 text-xs text-gray-400">
-            MoneyBank FX · v1.0
+          <div className="space-y-0.5 border-t border-gray-100 px-5 py-3 text-xs text-gray-400">
+            <div>MoneyBank FX · v{__APP_VERSION__}</div>
+            <div>
+              Developed by <span className="font-medium text-gray-500">Sanket Patil</span> · 9270507170
+            </div>
           </div>
         </aside>
 

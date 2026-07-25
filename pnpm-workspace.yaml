@@ -9,4 +9,5 @@ allowBuilds:
   bufferutil: false
   esbuild: true
   prisma: true
+  unrs-resolver: true
   utf-8-validate: false
