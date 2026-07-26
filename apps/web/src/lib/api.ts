@@ -1,4 +1,4 @@
-// API client for the MoneyBank FX Trade Copier backend.
+// API client for the Money Bank FX Trade Copier backend.
 // Requests go through the Vite dev proxy (`/api` → http://localhost:3000).
 
 const API = '/api/v1';

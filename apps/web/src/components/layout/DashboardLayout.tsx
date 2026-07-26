@@ -194,9 +194,9 @@ export default function DashboardLayout() {
             )}
           >
             <div className="flex items-center gap-2.5">
-              <img src="/logo.png" alt="MoneyBank FX" className="h-9 w-9 shrink-0 object-contain" />
+              <img src="/logo.png" alt="Money Bank FX" className="h-9 w-9 shrink-0 object-contain" />
               <span className={cn('text-[15px] font-bold text-gray-900', collapsed && 'md:hidden')}>
-                MoneyBank FX
+                Money Bank FX
               </span>
             </div>
             <button
@@ -280,7 +280,7 @@ export default function DashboardLayout() {
             </button>
             <div className="flex items-center gap-2 md:hidden">
               <img src="/logo.png" alt="" className="h-7 w-7 object-contain" />
-              <span className="font-bold text-gray-900">MoneyBank FX</span>
+              <span className="font-bold text-gray-900">Money Bank FX</span>
             </div>
             <div className="ml-auto">
               <UserMenu />
@@ -293,7 +293,7 @@ export default function DashboardLayout() {
 
           {/* Footer — shown at the bottom of every dashboard page */}
           <footer className="border-t border-gray-100 px-4 py-4 text-center text-xs text-gray-400 sm:px-6">
-            <div>MoneyBank FX · v{__APP_VERSION__}</div>
+            <div>Money Bank FX · v{__APP_VERSION__}</div>
             <div>
               Developed by <span className="font-medium text-gray-500">Sanket Patil</span> · 9270507170
             </div>

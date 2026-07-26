@@ -38,8 +38,8 @@ export default function ResetPasswordPage() {
     <div className="flex min-h-screen items-center justify-center bg-gray-50 px-4">
       <div className="w-full max-w-md rounded-2xl border border-gray-200 bg-white p-8 shadow-sm">
         <div className="mb-6 flex items-center gap-2.5">
-          <img src="/logo.png" alt="MoneyBank FX" className="h-9 w-9 object-contain" />
-          <span className="text-[15px] font-bold text-gray-900">MoneyBank FX</span>
+          <img src="/logo.png" alt="Money Bank FX" className="h-9 w-9 object-contain" />
+          <span className="text-[15px] font-bold text-gray-900">Money Bank FX</span>
         </div>
 
         {done ? (

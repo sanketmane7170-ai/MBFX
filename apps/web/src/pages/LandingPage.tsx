@@ -71,8 +71,8 @@ export default function LandingPage() {
       >
         <div className="flex items-center justify-between rounded-xl border border-gray-200/80 bg-white/70 px-4 py-2.5 backdrop-blur">
           <Link to="/" className="flex items-center gap-2.5">
-            <img src="/logo.png" alt="MoneyBank FX" className="h-8 w-8 object-contain" />
-            <span className="text-[15px] font-semibold tracking-tight text-gray-900">MoneyBank FX</span>
+            <img src="/logo.png" alt="Money Bank FX" className="h-8 w-8 object-contain" />
+            <span className="text-[15px] font-semibold tracking-tight text-gray-900">Money Bank FX</span>
           </Link>
           <Link
             to="/login"
@@ -281,7 +281,7 @@ export default function LandingPage() {
         >
           <div className="flex items-center gap-2">
             <img src="/logo.png" alt="" className="h-6 w-6 object-contain" />
-            <span className="font-medium text-gray-700">MoneyBank FX</span>
+            <span className="font-medium text-gray-700">Money Bank FX</span>
           </div>
           <span className="text-xs text-gray-400">MT4 / MT5 · v1.0</span>
         </motion.div>

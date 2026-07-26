@@ -208,7 +208,7 @@ function SmtpCard() {
   const [secure, setSecure] = useState(false);
   const [user, setUser] = useState('');
   const [password, setPassword] = useState('');
-  const [fromName, setFromName] = useState('MoneyBank FX');
+  const [fromName, setFromName] = useState('Money Bank FX');
   const [alertEmail, setAlertEmail] = useState('');
   const [alertsEnabled, setAlertsEnabled] = useState(true);
   const [testTo, setTestTo] = useState('');
@@ -409,7 +409,7 @@ function SmtpCard() {
             </Field>
 
             <Field label="From name" hint="Display name shown on outgoing emails.">
-              <Input value={fromName} onChange={(e) => setFromName(e.target.value)} placeholder="MoneyBank FX" />
+              <Input value={fromName} onChange={(e) => setFromName(e.target.value)} placeholder="Money Bank FX" />
             </Field>
 
             <div className="flex items-center justify-between rounded-lg border border-gray-200 px-4 py-3">

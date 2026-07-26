@@ -15,7 +15,7 @@ export default {
         sans: ['Inter', 'system-ui', 'sans-serif'],
       },
       colors: {
-        // MoneyBank FX brand green (matches app reference)
+        // Money Bank FX brand green (matches app reference)
         brand: {
           50: '#ecf6f1',
           100: '#d2ebe0',

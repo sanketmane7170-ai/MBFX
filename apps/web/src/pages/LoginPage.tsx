@@ -170,7 +170,7 @@ export default function LoginPage() {
                   transition={{ delay: 0.6, duration: 0.5 }}
                   className="mb-6"
                 >
-                  <img src="/logo.png" alt="MoneyBank FX" className="h-16 w-16 object-contain" />
+                  <img src="/logo.png" alt="Money Bank FX" className="h-16 w-16 object-contain" />
                 </motion.div>
                 <motion.h2
                   initial={{ opacity: 0, y: -20 }}
@@ -178,7 +178,7 @@ export default function LoginPage() {
                   transition={{ delay: 0.7, duration: 0.5 }}
                   className="text-3xl font-bold mb-2 text-center text-transparent bg-clip-text bg-gradient-to-r from-blue-600 to-indigo-600"
                 >
-                  MoneyBank FX
+                  Money Bank FX
                 </motion.h2>
                 <motion.p
                   initial={{ opacity: 0, y: -20 }}

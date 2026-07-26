@@ -2,7 +2,7 @@
  * Production email templates — table-based, inline-CSS, email-client safe
  * (Gmail, Apple Mail, Outlook, Yahoo, mobile). Shared design system:
  * #F8FAFC canvas, centered 600px white card, Inter/system fonts, brand-green
- * accent + CTAs. Header shows the hosted MoneyBank FX logo when an app URL is
+ * accent + CTAs. Header shows the hosted Money Bank FX logo when an app URL is
  * available, and degrades to a green "M" monogram when images are blocked.
  */
 
@@ -71,13 +71,13 @@ function spacer(h: number): string {
  */
 function brandLockup(logoUrl: string | null): string {
   const mark = logoUrl
-    ? `<img src="${esc(logoUrl)}" width="40" height="40" alt="MoneyBank FX" style="display:block;width:40px;height:40px;border:0;outline:none;" />`
+    ? `<img src="${esc(logoUrl)}" width="40" height="40" alt="Money Bank FX" style="display:block;width:40px;height:40px;border:0;outline:none;" />`
     : `<table role="presentation" cellpadding="0" cellspacing="0" border="0"><tr>
         <td align="center" valign="middle" width="40" height="40" style="width:40px;height:40px;background:${C.green};border-radius:11px;color:#fff;font-family:${FONT};font-size:22px;font-weight:700;text-align:center;line-height:40px;">M</td>
       </tr></table>`;
   return `<table role="presentation" cellpadding="0" cellspacing="0" border="0" style="margin:0 auto;"><tr>
     <td valign="middle" style="padding-right:12px;">${mark}</td>
-    <td valign="middle" style="font-family:${FONT};font-size:20px;font-weight:700;color:${C.text};letter-spacing:-0.02em;">MoneyBank&nbsp;FX</td>
+    <td valign="middle" style="font-family:${FONT};font-size:20px;font-weight:700;color:${C.text};letter-spacing:-0.02em;">Money Bank&nbsp;FX</td>
   </tr></table>`;
 }
 
@@ -123,7 +123,7 @@ function shell(preheader: string, inner: string): string {
 <meta http-equiv="X-UA-Compatible" content="IE=edge" />
 <meta name="color-scheme" content="light only" />
 <meta name="supported-color-schemes" content="light" />
-<title>MoneyBank FX</title>
+<title>Money Bank FX</title>
 <!--[if mso]><style>* { font-family: Arial, Helvetica, sans-serif !important; }</style><![endif]-->
 <style>
   body { margin:0; padding:0; background:${C.bg}; -webkit-text-size-adjust:100%; -ms-text-size-adjust:100%; }
@@ -171,12 +171,12 @@ function footer(url: string | null): string {
        </td></tr>`
     : '';
   return `${divider(32, 20)}
-  <tr><td align="center" style="font-family:${FONT};font-size:14px;font-weight:700;color:${C.text};">MoneyBank FX</td></tr>
+  <tr><td align="center" style="font-family:${FONT};font-size:14px;font-weight:700;color:${C.text};">Money Bank FX</td></tr>
   <tr><td align="center" style="font-family:${FONT};font-size:12px;color:${C.footer};padding-top:2px;">MT4 &amp; MT5 Trade Copier Platform</td></tr>
   ${linkRow}
   ${spacer(14)}
   <tr><td align="center" style="font-family:${FONT};font-size:12px;color:${C.footer};">This is an automated message — please do not reply.</td></tr>
-  <tr><td align="center" style="font-family:${FONT};font-size:12px;color:${C.footer};padding-top:4px;">&copy; 2026 MoneyBank FX. All rights reserved.</td></tr>`;
+  <tr><td align="center" style="font-family:${FONT};font-size:12px;color:${C.footer};padding-top:4px;">&copy; 2026 Money Bank FX. All rights reserved.</td></tr>`;
 }
 
 /** Success/hero icon: ring + big check. */
@@ -280,7 +280,7 @@ export function resetEmail(p: { email: string; password: string; url: string | n
   const inner = `
     ${header(logoOf(p.url))}
     ${heroCheck()}
-    ${heading('Your password has been reset', 'An administrator has reset the password for your<br/>MoneyBank FX account.')}
+    ${heading('Your password has been reset', 'An administrator has reset the password for your<br/>Money Bank FX account.')}
     ${divider(28, 24)}
     ${greeting(`Hello,<br/>Your account credentials have been updated. Use the temporary password below to sign in.`)}
     ${spacer(18)}
@@ -299,11 +299,11 @@ export function resetEmail(p: { email: string; password: string; url: string | n
     ${footer(p.url)}
   `;
   return {
-    subject: 'Your MoneyBank FX password has been reset',
-    html: shell('An administrator reset your MoneyBank FX password. Sign in with your new temporary password.', inner),
+    subject: 'Your Money Bank FX password has been reset',
+    html: shell('An administrator reset your Money Bank FX password. Sign in with your new temporary password.', inner),
     text:
       `Your password has been reset\n\n` +
-      `An administrator has reset the password for your MoneyBank FX account.\n\n` +
+      `An administrator has reset the password for your Money Bank FX account.\n\n` +
       `Email: ${p.email}\nTemporary password: ${p.password}\n\n` +
       (p.url ? `Sign in: ${signIn}\n\n` : '') +
       `For your security, change this temporary password right after you sign in.\n\n` +
@@ -316,7 +316,7 @@ export function inviteEmail(p: { email: string; password: string; url: string | 
   const inner = `
     ${header(logoOf(p.url))}
     ${heroCheck()}
-    ${heading('Welcome to MoneyBank FX', 'An administrator account has been created for you.')}
+    ${heading('Welcome to Money Bank FX', 'An administrator account has been created for you.')}
     ${divider(28, 24)}
     ${greeting(`Hello,<br/>Your administrator account is ready. Sign in with the temporary credentials below to get started.`)}
     ${spacer(18)}
@@ -335,10 +335,10 @@ export function inviteEmail(p: { email: string; password: string; url: string | 
     ${footer(p.url)}
   `;
   return {
-    subject: 'Your MoneyBank FX admin account is ready',
-    html: shell('An administrator account has been created for you on MoneyBank FX.', inner),
+    subject: 'Your Money Bank FX admin account is ready',
+    html: shell('An administrator account has been created for you on Money Bank FX.', inner),
     text:
-      `Welcome to MoneyBank FX\n\n` +
+      `Welcome to Money Bank FX\n\n` +
       `An administrator account has been created for you.\n\n` +
       `Email: ${p.email}\nTemporary password: ${p.password}\n\n` +
       (p.url ? `Sign in: ${signIn}\n\n` : '') +
@@ -399,7 +399,7 @@ export function passwordResetLinkEmail(p: {
   const inner = `
     ${header(logoOf(p.url))}
     ${heroCheck()}
-    ${heading('Reset your password', 'We received a request to reset the password for<br/>your MoneyBank FX account.')}
+    ${heading('Reset your password', 'We received a request to reset the password for<br/>your Money Bank FX account.')}
     ${divider(28, 24)}
     ${greeting(`Hello,<br/>Click the button below to choose a new password. This link expires in ${p.expiresMinutes} minutes.`)}
     ${spacer(26)}
@@ -414,11 +414,11 @@ export function passwordResetLinkEmail(p: {
     ${footer(p.url)}
   `;
   return {
-    subject: 'Reset your MoneyBank FX password',
-    html: shell('Reset your MoneyBank FX password. This link expires soon.', inner),
+    subject: 'Reset your Money Bank FX password',
+    html: shell('Reset your Money Bank FX password. This link expires soon.', inner),
     text:
       `Reset your password\n\n` +
-      `We received a request to reset the password for your MoneyBank FX account (${p.email}).\n\n` +
+      `We received a request to reset the password for your Money Bank FX account (${p.email}).\n\n` +
       `Reset your password: ${p.resetUrl}\n\n` +
       `This link expires in ${p.expiresMinutes} minutes.\n\n` +
       `If you didn't request this, you can safely ignore this email — your password will not change.`,
