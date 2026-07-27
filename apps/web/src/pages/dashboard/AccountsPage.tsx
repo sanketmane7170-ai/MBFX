@@ -20,7 +20,8 @@ import { useToast } from '@/components/ui/toast';
 import { AddAccountDialog } from '@/components/accounts/AddAccountDialog';
 import { ConfirmDialog } from '@/components/ConfirmDialog';
 import { useAsync } from '@/hooks/useAsync';
-import { accountsApi, type Account } from '@/lib/api';
+import { accountsApi, monitoringApi, type Account, type AccountSnapshot } from '@/lib/api';
+import { money, num } from '@/lib/format';
 
 function RoleBadges({ a }: { a: Account }) {
   const isSource = !!a.sourceForConfig;
@@ -36,7 +37,18 @@ function RoleBadges({ a }: { a: Account }) {
 
 export default function AccountsPage() {
   const toast = useToast();
-  const { data: accounts, loading, error, reload } = useAsync(() => accountsApi.list(), []);
+  const { data, loading, error, reload } = useAsync(async () => {
+    const accounts = await accountsApi.list();
+    // Latest balance/equity snapshot per account (populated by the backend poller).
+    const snaps = await Promise.all(
+      accounts.map((a) => monitoringApi.snapshot(a.id).catch(() => null)),
+    );
+    const balances: Record<string, AccountSnapshot | null> = {};
+    accounts.forEach((a, i) => {
+      balances[a.id] = snaps[i];
+    });
+    return { accounts, balances };
+  }, []);
   const [addOpen, setAddOpen] = useState(false);
   const [toDelete, setToDelete] = useState<Account | null>(null);
   const [deleting, setDeleting] = useState(false);
@@ -83,10 +95,13 @@ export default function AccountsPage() {
     }
   };
 
-  const list = accounts ?? [];
+  const list = data?.accounts ?? [];
+  const balances = data?.balances ?? {};
   const connected = list.filter((a) => a.status === 'CONNECTED').length;
   const sources = list.filter((a) => a.sourceForConfig).length;
   const receivers = list.filter((a) => a._count.receiverSubscriptions > 0).length;
+  const totalEquity = list.reduce((t, a) => t + num(balances[a.id]?.equity), 0);
+  const hasEquity = list.some((a) => balances[a.id] != null);
   const filtered = list.filter(
     (a) =>
       a.label.toLowerCase().includes(q.toLowerCase()) ||
@@ -132,8 +147,12 @@ export default function AccountsPage() {
       />
 
       <div className="mb-6 grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
-        <StatCard label="Total Accounts" value={list.length} sub="connected via MetaApi" />
-        <StatCard label="Connected" value={connected} sub="live connections" />
+        <StatCard label="Total Accounts" value={list.length} sub={`${connected} connected`} />
+        <StatCard
+          label="Total Equity"
+          value={hasEquity ? money(totalEquity) : '—'}
+          sub="across all accounts"
+        />
         <StatCard label="Sources" value={sources} sub="acting as masters" />
         <StatCard label="Receivers" value={receivers} sub="copying a source" />
       </div>
@@ -172,6 +191,8 @@ export default function AccountsPage() {
                   <th className="px-4 py-3">Name</th>
                   <th className="px-4 py-3">Account</th>
                   <th className="px-4 py-3">Platform</th>
+                  <th className="px-4 py-3 text-right">Balance</th>
+                  <th className="px-4 py-3 text-right">Equity</th>
                   <th className="px-4 py-3">Role</th>
                   <th className="px-4 py-3">Connection</th>
                   <th className="px-4 py-3">Status</th>
@@ -189,6 +210,12 @@ export default function AccountsPage() {
                     <td className="px-4 py-3 text-gray-500">{a.login}</td>
                     <td className="px-4 py-3">
                       <Badge tone="blue">{a.platform}</Badge>
+                    </td>
+                    <td className="px-4 py-3 text-right tabular-nums text-gray-700">
+                      {balances[a.id] ? money(balances[a.id]!.balance) : <span className="text-gray-300">—</span>}
+                    </td>
+                    <td className="px-4 py-3 text-right tabular-nums font-medium text-gray-900">
+                      {balances[a.id] ? money(balances[a.id]!.equity) : <span className="text-gray-300">—</span>}
                     </td>
                     <td className="px-4 py-3">
                       <RoleBadges a={a} />
@@ -221,7 +248,7 @@ export default function AccountsPage() {
                 ))}
                 {filtered.length === 0 && (
                   <tr>
-                    <td colSpan={7} className="px-4 py-10 text-center text-sm text-gray-400">
+                    <td colSpan={9} className="px-4 py-10 text-center text-sm text-gray-400">
                       No accounts match “{q}”.
                     </td>
                   </tr>
