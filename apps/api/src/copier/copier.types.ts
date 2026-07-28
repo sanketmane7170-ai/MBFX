@@ -1,4 +1,4 @@
-import { Platform, SizingMode } from '@prisma/client';
+import { Platform, SizingMode, SymbolFilterMode } from '@prisma/client';
 
 /** DI token for the active copier provider (mock locally, MetaApi in prod). */
 export const COPIER_PROVIDER = Symbol('COPIER_PROVIDER');
@@ -25,6 +25,11 @@ export interface SubscriptionRules {
   copySl: boolean;
   copyTp: boolean;
   symbolMapping?: SymbolMap[];
+  // Trade filters (mapped to CopyFactory symbolFilter + min/max trade volume).
+  symbolFilterMode?: SymbolFilterMode;
+  symbolFilterList?: string[];
+  minVolume?: number;
+  maxVolume?: number;
 }
 
 export interface AddSubscriberInput extends SubscriptionRules {
@@ -41,6 +46,24 @@ export interface AccountState {
   margin: number;
   openPositions: number;
   connected: boolean;
+  /** ACCOUNT_MARGIN_MODE_RETAIL_NETTING | ..._HEDGING (broker-set), if known. */
+  marginMode?: string | null;
+}
+
+/** A single open position on a MetaTrader account. */
+export interface OpenPosition {
+  id: string;
+  symbol: string;
+  /** 'BUY' | 'SELL' (normalized from MetaApi POSITION_TYPE_*). */
+  type: string;
+  volume: number;
+  openPrice: number;
+  currentPrice: number | null;
+  stopLoss: number | null;
+  takeProfit: number | null;
+  swap: number;
+  profit: number;
+  time: string | null;
 }
 
 /**
@@ -86,4 +109,7 @@ export interface CopierProvider {
    * (e.g. the mock provider, or no live data).
    */
   getAccountState(metaapiAccountId: string): Promise<AccountState | null>;
+
+  /** Current open positions on an account (empty for the mock provider). */
+  getOpenPositions(metaapiAccountId: string): Promise<OpenPosition[]>;
 }

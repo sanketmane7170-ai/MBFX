@@ -26,11 +26,17 @@ const SUB_VIEW = {
   copyTp: true,
   reverse: true,
   symbolMapping: true,
+  symbolFilterMode: true,
+  symbolFilterList: true,
+  minVolume: true,
+  maxVolume: true,
+  tradeWindowStart: true,
+  tradeWindowEnd: true,
   enabled: true,
   status: true,
   createdAt: true,
   receiverAccount: {
-    select: { id: true, label: true, login: true, server: true, platform: true, status: true },
+    select: { id: true, label: true, login: true, server: true, platform: true, status: true, marginMode: true },
   },
 } satisfies Prisma.SubscriptionSelect;
 
@@ -44,7 +50,7 @@ const COPIER_VIEW = {
   createdAt: true,
   updatedAt: true,
   sourceAccount: {
-    select: { id: true, label: true, login: true, server: true, platform: true, status: true },
+    select: { id: true, label: true, login: true, server: true, platform: true, status: true, marginMode: true },
   },
   _count: { select: { subscriptions: true } },
 } satisfies Prisma.CopierConfigSelect;
@@ -77,6 +83,12 @@ export class CopiersService {
 
   private static normalizeMapping(mapping?: SymbolMapDto[]): SymbolMap[] | undefined {
     return mapping?.map((m) => ({ from: m.from, to: m.to }));
+  }
+
+  /** Uppercase, trim, de-dupe a symbol filter list. Undefined stays undefined. */
+  private static normalizeSymbols(list?: string[]): string[] | undefined {
+    if (list == null) return undefined;
+    return [...new Set(list.map((s) => s.trim().toUpperCase()).filter(Boolean))];
   }
 
   /** Subscription ownership filter (via its parent copier config). */
@@ -268,6 +280,10 @@ export class CopiersService {
       copySl: dto.copySl ?? true,
       copyTp: dto.copyTp ?? true,
       symbolMapping: CopiersService.normalizeMapping(dto.symbolMapping),
+      symbolFilterMode: dto.symbolFilterMode,
+      symbolFilterList: CopiersService.normalizeSymbols(dto.symbolFilterList),
+      minVolume: dto.minVolume,
+      maxVolume: dto.maxVolume,
     };
 
     const { subscriberId } = await this.copier.addSubscriber({
@@ -290,6 +306,12 @@ export class CopiersService {
           symbolMapping: rules.symbolMapping
             ? (rules.symbolMapping as unknown as Prisma.InputJsonValue)
             : undefined,
+          symbolFilterMode: dto.symbolFilterMode,
+          symbolFilterList: rules.symbolFilterList ?? [],
+          minVolume: dto.minVolume ?? null,
+          maxVolume: dto.maxVolume ?? null,
+          tradeWindowStart: dto.tradeWindowStart ?? null,
+          tradeWindowEnd: dto.tradeWindowEnd ?? null,
           status: ReceiverStatus.ACTIVE,
         },
         select: SUB_VIEW,
@@ -320,6 +342,7 @@ export class CopiersService {
     if (!existing) throw new NotFoundException('Receiver not found');
 
     const mapping = CopiersService.normalizeMapping(dto.symbolMapping);
+    const symbols = CopiersService.normalizeSymbols(dto.symbolFilterList);
     const sub = await this.prisma.subscription.update({
       where: { id: subId },
       data: {
@@ -331,6 +354,12 @@ export class CopiersService {
         symbolMapping: mapping
           ? (mapping as unknown as Prisma.InputJsonValue)
           : undefined,
+        symbolFilterMode: dto.symbolFilterMode,
+        symbolFilterList: symbols,
+        minVolume: dto.minVolume,
+        maxVolume: dto.maxVolume,
+        tradeWindowStart: dto.tradeWindowStart,
+        tradeWindowEnd: dto.tradeWindowEnd,
         enabled: dto.enabled,
         ...(dto.enabled !== undefined
           ? { status: dto.enabled ? ReceiverStatus.ACTIVE : ReceiverStatus.PAUSED }
@@ -346,8 +375,19 @@ export class CopiersService {
       copySl: dto.copySl,
       copyTp: dto.copyTp,
       symbolMapping: mapping,
+      symbolFilterMode: dto.symbolFilterMode,
+      symbolFilterList: symbols,
+      minVolume: dto.minVolume,
+      maxVolume: dto.maxVolume,
       enabled: dto.enabled,
     });
+
+    // A windowless, enabled receiver must never stay stuck paused by a window
+    // that was just removed — the trading-window scheduler no longer manages it.
+    if (sub.enabled && sub.tradeWindowStart == null) {
+      await this.copier.resumeSubscription(existing.copyfactorySubscriberId).catch(() => undefined);
+    }
+
     await this.audit.log({
       userId: actorId,
       action: 'RECEIVER_UPDATED',

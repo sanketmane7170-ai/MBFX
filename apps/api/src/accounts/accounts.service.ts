@@ -23,6 +23,7 @@ const ACCOUNT_VIEW = {
   server: true,
   platform: true,
   status: true,
+  marginMode: true,
   createdById: true,
   createdAt: true,
   updatedAt: true,
@@ -139,6 +140,22 @@ export class AccountsService {
     });
     if (!account) throw new NotFoundException('Account not found');
     return account;
+  }
+
+  /** Live open positions for an account, straight from MetaApi. */
+  async getPositions(id: string, actor: Actor) {
+    const account = await this.prisma.account.findFirst({
+      where: { id, ...ownedBy(actor), deletedAt: null },
+      select: { metaapiAccountId: true },
+    });
+    if (!account) throw new NotFoundException('Account not found');
+    try {
+      return await this.copier.getOpenPositions(account.metaapiAccountId);
+    } catch (e) {
+      this.logger.warn(`getPositions ${id} failed: ${(e as Error).message}`);
+      // Return empty rather than 500 — the UI shows "no positions / unavailable".
+      return [];
+    }
   }
 
   async rename(id: string, label: string, actor: Actor): Promise<AccountView> {

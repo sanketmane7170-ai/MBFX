@@ -1,7 +1,8 @@
 import { Inject, Injectable, Logger, OnModuleDestroy, OnModuleInit } from '@nestjs/common';
-import { AccountStatus } from '@prisma/client';
+import { AccountStatus, NotificationType } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import { SettingsService } from '../settings/settings.service';
+import { NotificationsService } from '../notifications/notifications.service';
 import { COPIER_PROVIDER, CopierProvider } from '../copier/copier.types';
 import { MonitoringService } from './monitoring.service';
 
@@ -26,6 +27,7 @@ export class AccountSnapshotService implements OnModuleInit, OnModuleDestroy {
     private readonly prisma: PrismaService,
     private readonly settings: SettingsService,
     private readonly monitoring: MonitoringService,
+    private readonly notifications: NotificationsService,
     @Inject(COPIER_PROVIDER) private readonly copier: CopierProvider,
   ) {}
 
@@ -58,7 +60,7 @@ export class AccountSnapshotService implements OnModuleInit, OnModuleDestroy {
 
     const accounts = await this.prisma.account.findMany({
       where: { deletedAt: null },
-      select: { id: true, metaapiAccountId: true, status: true },
+      select: { id: true, metaapiAccountId: true, status: true, marginMode: true },
     });
 
     for (const a of accounts) {
@@ -74,11 +76,25 @@ export class AccountSnapshotService implements OnModuleInit, OnModuleDestroy {
           openPositions: st.openPositions,
         });
         await this.reconcile(a.id, a.status, AccountStatus.CONNECTED);
+        // Capture the broker's margin mode (netting/hedging) once it's known.
+        const mode = AccountSnapshotService.marginMode(st.marginMode);
+        if (mode && mode !== a.marginMode) {
+          await this.prisma.account.update({ where: { id: a.id }, data: { marginMode: mode } });
+        }
       } catch (e) {
         this.logger.warn(`Snapshot for account ${a.id} failed: ${(e as Error).message}`);
         await this.reconcile(a.id, a.status, AccountStatus.ERROR);
       }
     }
+  }
+
+  /** Normalize MetaApi's ACCOUNT_MARGIN_MODE_RETAIL_* to 'netting' | 'hedging'. */
+  private static marginMode(raw?: string | null): string | null {
+    if (!raw) return null;
+    const s = raw.toUpperCase();
+    if (s.includes('HEDGING')) return 'hedging';
+    if (s.includes('NETTING')) return 'netting';
+    return null;
   }
 
   /**
@@ -93,5 +109,28 @@ export class AccountSnapshotService implements OnModuleInit, OnModuleDestroy {
     if (current === observed) return;
     if (current === AccountStatus.DISCONNECTED) return; // respect manual disconnect
     await this.prisma.account.update({ where: { id }, data: { status: observed } });
+
+    // Notify on offline / recovery transitions (bell + owner/admins).
+    const goingOffline = observed === AccountStatus.ERROR && current !== AccountStatus.ERROR;
+    const recovered = observed === AccountStatus.CONNECTED && current === AccountStatus.ERROR;
+    if (goingOffline || recovered) {
+      const acc = await this.prisma.account.findUnique({
+        where: { id },
+        select: { label: true, createdById: true },
+      });
+      if (acc) {
+        await this.notifications.notifyAdmins(
+          {
+            type: goingOffline ? NotificationType.ACCOUNT_OFFLINE : NotificationType.ACCOUNT_ONLINE,
+            title: goingOffline ? 'Account went offline' : 'Account reconnected',
+            body: goingOffline
+              ? `${acc.label} lost its broker connection — copies to/from it may be interrupted.`
+              : `${acc.label} is connected again.`,
+            meta: { accountId: id },
+          },
+          acc.createdById,
+        );
+      }
+    }
   }
 }

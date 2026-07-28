@@ -4,6 +4,7 @@ import {
   AccountState,
   AddSubscriberInput,
   CopierProvider,
+  OpenPosition,
   ProvisionAccountInput,
   SubscriptionRules,
 } from './copier.types';
@@ -91,5 +92,9 @@ export class MockCopierProvider implements CopierProvider {
   // No live broker connection in the mock — the snapshot poller skips it.
   async getAccountState(_metaapiAccountId: string): Promise<AccountState | null> {
     return null;
+  }
+
+  async getOpenPositions(_metaapiAccountId: string): Promise<OpenPosition[]> {
+    return [];
   }
 }

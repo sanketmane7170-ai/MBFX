@@ -11,6 +11,7 @@ import {
   AccountState,
   AddSubscriberInput,
   CopierProvider,
+  OpenPosition,
   ProvisionAccountInput,
   SubscriptionRules,
 } from './copier.types';
@@ -244,22 +245,40 @@ export class MetaApiCopierProvider implements CopierProvider {
     await connection.close?.();
   }
 
-  async getAccountState(metaapiAccountId: string): Promise<AccountState | null> {
+  /** Get (or open + cache) a synchronized RPC connection for an account. */
+  private async connFor(metaapiAccountId: string): Promise<any> {
+    let conn = this.rpc.get(metaapiAccountId);
+    if (conn) return conn;
     const metaApi = await this.getStateApi();
-    try {
-      let conn = this.rpc.get(metaapiAccountId);
-      if (!conn) {
-        const account = await metaApi.metatraderAccountApi.getAccount(metaapiAccountId);
-        conn = account.getRPCConnection();
-        await conn.connect();
-        // waitSynchronized can be slow on first connect; bound it so a stuck
-        // account never blocks the whole poll.
-        await Promise.race([
-          conn.waitSynchronized(),
-          new Promise((_, rej) => setTimeout(() => rej(new Error('sync timeout')), 25_000)),
-        ]);
-        this.rpc.set(metaapiAccountId, conn);
+    const account = await metaApi.metatraderAccountApi.getAccount(metaapiAccountId);
+    conn = account.getRPCConnection();
+    await conn.connect();
+    // waitSynchronized can be slow on first connect; bound it so a stuck account
+    // never blocks the whole poll.
+    await Promise.race([
+      conn.waitSynchronized(),
+      new Promise((_, rej) => setTimeout(() => rej(new Error('sync timeout')), 25_000)),
+    ]);
+    this.rpc.set(metaapiAccountId, conn);
+    return conn;
+  }
+
+  /** Drop a (possibly dead) cached connection so the next call reconnects. */
+  private async dropConn(metaapiAccountId: string): Promise<void> {
+    const stale = this.rpc.get(metaapiAccountId);
+    if (stale) {
+      try {
+        await stale.close?.();
+      } catch {
+        /* ignore */
       }
+      this.rpc.delete(metaapiAccountId);
+    }
+  }
+
+  async getAccountState(metaapiAccountId: string): Promise<AccountState | null> {
+    try {
+      const conn = await this.connFor(metaapiAccountId);
       const info = await conn.getAccountInformation();
       const positions = await conn.getPositions().catch(() => []);
       return {
@@ -268,18 +287,33 @@ export class MetaApiCopierProvider implements CopierProvider {
         margin: Number(info?.margin ?? 0),
         openPositions: Array.isArray(positions) ? positions.length : 0,
         connected: true,
+        marginMode: info?.marginMode ?? null,
       };
     } catch (e) {
-      // Drop the (possibly dead) cached connection so the next tick reconnects.
-      const stale = this.rpc.get(metaapiAccountId);
-      if (stale) {
-        try {
-          await stale.close?.();
-        } catch {
-          /* ignore */
-        }
-        this.rpc.delete(metaapiAccountId);
-      }
+      await this.dropConn(metaapiAccountId);
+      throw e;
+    }
+  }
+
+  async getOpenPositions(metaapiAccountId: string): Promise<OpenPosition[]> {
+    try {
+      const conn = await this.connFor(metaapiAccountId);
+      const positions: any[] = (await conn.getPositions()) ?? [];
+      return positions.map((p) => ({
+        id: String(p?.id ?? ''),
+        symbol: String(p?.symbol ?? ''),
+        type: String(p?.type ?? '').includes('SELL') ? 'SELL' : 'BUY',
+        volume: Number(p?.volume ?? 0),
+        openPrice: Number(p?.openPrice ?? 0),
+        currentPrice: p?.currentPrice != null ? Number(p.currentPrice) : null,
+        stopLoss: p?.stopLoss != null ? Number(p.stopLoss) : null,
+        takeProfit: p?.takeProfit != null ? Number(p.takeProfit) : null,
+        swap: Number(p?.swap ?? 0),
+        profit: Number(p?.profit ?? 0),
+        time: p?.time ? new Date(p.time).toISOString() : null,
+      }));
+    } catch (e) {
+      await this.dropConn(metaapiAccountId);
       throw e;
     }
   }
@@ -329,6 +363,22 @@ export class MetaApiCopierProvider implements CopierProvider {
     } else if (rules.multiplier != null) {
       subscription.multiplier = rules.multiplier;
     }
+
+    // Symbol filter → CopyFactory `symbolFilter { included, excluded }`.
+    if (rules.symbolFilterMode != null) {
+      const syms = (rules.symbolFilterList ?? []).map((s) => s.toUpperCase()).filter(Boolean);
+      if (rules.symbolFilterMode === 'INCLUDE' && syms.length) {
+        subscription.symbolFilter = { included: syms, excluded: [] };
+      } else if (rules.symbolFilterMode === 'EXCLUDE' && syms.length) {
+        subscription.symbolFilter = { included: [], excluded: syms };
+      } else {
+        delete subscription.symbolFilter;
+      }
+    }
+
+    // Volume caps → CopyFactory min/max trade volume.
+    if (rules.minVolume != null) subscription.minTradeVolume = rules.minVolume;
+    if (rules.maxVolume != null) subscription.maxTradeVolume = rules.maxVolume;
 
     // Enable/disable. CopyFactory has no pause flag; `closeOnly` stops opening
     // new copied positions while keeping the subscription config intact.

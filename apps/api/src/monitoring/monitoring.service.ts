@@ -1,7 +1,8 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
-import { CopyEvent, CopyStatus, Prisma } from '@prisma/client';
+import { CopyEvent, CopyStatus, NotificationType, Prisma } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import { MailService } from '../mail/mail.service';
+import { NotificationsService } from '../notifications/notifications.service';
 import { Actor, ownedBy } from '../common/scope';
 import { StreamGateway } from './stream.gateway';
 import { IngestCopyEvent, IngestSnapshot } from './monitoring.types';
@@ -18,7 +19,33 @@ export class MonitoringService {
     private readonly prisma: PrismaService,
     private readonly gateway: StreamGateway,
     private readonly mail: MailService,
+    private readonly notifications: NotificationsService,
   ) {}
+
+  /** Raise an in-app notification (bell) for a failed copy — for admins + the copier owner. */
+  private async notifyCopyFailed(row: CopyEvent): Promise<void> {
+    const [copier, receiver] = await Promise.all([
+      row.copierConfigId
+        ? this.prisma.copierConfig.findUnique({
+            where: { id: row.copierConfigId },
+            select: { createdById: true, name: true },
+          })
+        : Promise.resolve(null),
+      this.prisma.account.findUnique({
+        where: { id: row.receiverAccountId },
+        select: { label: true },
+      }),
+    ]);
+    await this.notifications.notifyAdmins(
+      {
+        type: NotificationType.COPY_FAILED,
+        title: 'Trade copy failed',
+        body: `${row.symbol} ${row.side} could not be copied to ${receiver?.label ?? 'a receiver'}${copier ? ` (${copier.name})` : ''}.`,
+        meta: { copyEventId: row.id, symbol: row.symbol, receiverAccountId: row.receiverAccountId },
+      },
+      copier?.createdById ?? undefined,
+    );
+  }
 
   async ingestCopyEvent(evt: IngestCopyEvent): Promise<CopyEvent> {
     const row = await this.prisma.copyEvent.create({
@@ -51,6 +78,7 @@ export class MonitoringService {
         lots: row.lots.toString(),
         action: row.action,
       });
+      void this.notifyCopyFailed(row);
     }
     return row;
   }
@@ -112,6 +140,7 @@ export class MonitoringService {
           lots: row.lots.toString(),
           action: row.action,
         });
+        void this.notifyCopyFailed(row);
       }
     }
     return row;

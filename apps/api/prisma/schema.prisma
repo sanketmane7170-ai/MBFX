@@ -62,6 +62,7 @@ model User {
   createdUsers User[]     @relation("UserCreator")
 
   auditLogs      AuditLog[]
+  notifications  Notification[]
   createdAccounts Account[]      @relation("AccountCreator")
   createdCopiers  CopierConfig[] @relation("CopierCreator")
   sessions        Session[]
@@ -140,6 +141,8 @@ model Account {
   platform          Platform
   encryptedPassword String
   status            AccountStatus @default(PROVISIONING)
+  /// Broker position-accounting mode, captured from MetaApi: 'netting' | 'hedging' | null.
+  marginMode        String?
 
   createdById       String
   createdBy         User          @relation("AccountCreator", fields: [createdById], references: [id])
@@ -194,12 +197,30 @@ model Subscription {
   enabled       Boolean        @default(true)
   status        ReceiverStatus @default(ACTIVE)
 
+  // Trade filters (mapped to CopyFactory subscription fields).
+  symbolFilterMode SymbolFilterMode @default(NONE)
+  symbolFilterList String[]         @default([])
+  minVolume        Float?
+  maxVolume        Float?
+
+  // Trading-hours window (minutes-of-day in UTC, 0–1439). When both are set the
+  // receiver only opens new copied trades inside the window (a scheduler pauses
+  // it outside). Null = copy 24h.
+  tradeWindowStart Int?
+  tradeWindowEnd   Int?
+
   createdAt     DateTime       @default(now())
   updatedAt     DateTime       @updatedAt
 
   @@unique([copierConfigId, receiverAccountId])
   @@index([copierConfigId])
   @@map("subscriptions")
+}
+
+enum SymbolFilterMode {
+  NONE
+  INCLUDE // only copy symbols in the list
+  EXCLUDE // copy everything except symbols in the list
 }
 
 // ---------------------------------------------------------------------------
@@ -259,4 +280,28 @@ model AccountSnapshot {
 
   @@index([accountId, ts])
   @@map("account_snapshots")
+}
+
+enum NotificationType {
+  COPY_FAILED
+  ACCOUNT_OFFLINE
+  ACCOUNT_ONLINE
+  INFO
+}
+
+/// In-app notification for a user (bell feed). Complements outbound email alerts.
+model Notification {
+  id        String           @id @default(uuid())
+  userId    String
+  user      User             @relation(fields: [userId], references: [id], onDelete: Cascade)
+  type      NotificationType @default(INFO)
+  title     String
+  body      String?
+  meta      Json?
+  readAt    DateTime?
+  createdAt DateTime         @default(now())
+
+  @@index([userId, readAt])
+  @@index([userId, createdAt])
+  @@map("notifications")
 }

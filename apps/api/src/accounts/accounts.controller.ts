@@ -40,6 +40,11 @@ export class AccountsController {
     return this.accounts.findOne(id, actor);
   }
 
+  @Get(':id/positions')
+  positions(@Param('id', ParseUUIDPipe) id: string, @CurrentUser() actor: AuthPayload) {
+    return this.accounts.getPositions(id, actor);
+  }
+
   @Patch(':id')
   update(
     @Param('id', ParseUUIDPipe) id: string,

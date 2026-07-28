@@ -7,6 +7,7 @@ import { SimulationController } from './simulation.controller';
 import { SimulationService } from './simulation.service';
 import { CopyFactoryListenerService } from './copyfactory-listener.service';
 import { AccountSnapshotService } from './account-snapshot.service';
+import { TradingWindowService } from './trading-window.service';
 
 // Dev-only trade simulation is not compiled into production at all — the route
 // simply does not exist there (previously it was mounted and returned 403).
@@ -20,6 +21,7 @@ const isProd = process.env.NODE_ENV === 'production';
     StreamGateway,
     CopyFactoryListenerService,
     AccountSnapshotService,
+    TradingWindowService,
     ...(isProd ? [] : [SimulationService]),
   ],
   exports: [MonitoringService, StreamGateway],

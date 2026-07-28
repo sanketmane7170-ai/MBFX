@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { Link, useParams } from 'react-router-dom';
-import { ArrowLeft, Pencil, Plus, ShieldAlert, Trash2, Users } from 'lucide-react';
+import { AlertTriangle, ArrowLeft, Pencil, Plus, ShieldAlert, Trash2, Users } from 'lucide-react';
 import { PageHeader } from '@/components/layout/DashboardLayout';
 import { Button } from '@/components/ui/button';
 import { Switch } from '@/components/ui/form';
@@ -26,6 +26,8 @@ function sizingText(s: Subscription): string {
   return 'balance ratio';
 }
 
+const pad = (m: number) => `${String(Math.floor(m / 60)).padStart(2, '0')}:${String(m % 60).padStart(2, '0')}`;
+
 export default function CopierDetailPage() {
   const { id = '' } = useParams();
   const toast = useToast();
@@ -39,6 +41,10 @@ export default function CopierDetailPage() {
   const [closing, setClosing] = useState(false);
 
   const receivers = config?.subscriptions ?? [];
+  const srcMode = config?.sourceAccount.marginMode ?? null;
+  const mismatched = receivers.filter(
+    (s) => s.receiverAccount.marginMode && srcMode && s.receiverAccount.marginMode !== srcMode,
+  );
 
   const toggleEnabled = async () => {
     if (!config) return;
@@ -120,13 +126,30 @@ export default function CopierDetailPage() {
         }
       />
 
-      <div className="mb-6 flex flex-wrap items-center gap-3">
+      <div className="mb-4 flex flex-wrap items-center gap-3">
         <StatusBadge status={config.sourceAccount.status} />
+        {config.sourceAccount.marginMode && (
+          <Badge tone="gray">source: {config.sourceAccount.marginMode}</Badge>
+        )}
         <Badge tone="gray">
           {receivers.length}/{MAX_RECEIVERS} receivers
         </Badge>
         <span className="text-xs text-gray-400">Strategy {config.copyfactoryStrategyId}</span>
       </div>
+
+      {mismatched.length > 0 && (
+        <div className="mb-6 flex items-start gap-2.5 rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800">
+          <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
+          <div>
+            <span className="font-semibold">Margin-mode mismatch.</span> The source is{' '}
+            <span className="font-medium">{srcMode}</span>, but{' '}
+            {mismatched.map((s) => s.receiverAccount.label).join(', ')}{' '}
+            {mismatched.length === 1 ? 'is' : 'are'} on a different mode. Copies may not reproduce
+            faithfully — a hedging source&rsquo;s opposite trades net out on a netting receiver. For
+            reliable copying, keep source and receivers on the same mode (ideally both hedging).
+          </div>
+        </div>
+      )}
 
       <Card>
         <div className="flex items-center gap-2 border-b border-gray-100 p-4 text-sm font-semibold text-gray-800">
@@ -171,6 +194,16 @@ export default function CopierDetailPage() {
                         {s.copySl && <Badge tone="gray">SL</Badge>}
                         {s.copyTp && <Badge tone="gray">TP</Badge>}
                         {s.reverse && <Badge tone="amber">Reverse</Badge>}
+                        {s.symbolFilterMode === 'INCLUDE' && <Badge tone="blue">only {s.symbolFilterList.join('/')}</Badge>}
+                        {s.symbolFilterMode === 'EXCLUDE' && <Badge tone="blue">excl {s.symbolFilterList.join('/')}</Badge>}
+                        {s.minVolume != null && <Badge tone="gray">min {s.minVolume}</Badge>}
+                        {s.maxVolume != null && <Badge tone="gray">max {s.maxVolume}</Badge>}
+                        {s.tradeWindowStart != null && s.tradeWindowEnd != null && (
+                          <Badge tone="gray">{pad(s.tradeWindowStart)}–{pad(s.tradeWindowEnd)} UTC</Badge>
+                        )}
+                        {s.receiverAccount.marginMode && srcMode && s.receiverAccount.marginMode !== srcMode && (
+                          <Badge tone="amber">{s.receiverAccount.marginMode}</Badge>
+                        )}
                       </div>
                     </td>
                     <td className="px-4 py-3">

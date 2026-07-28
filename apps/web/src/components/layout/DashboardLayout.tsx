@@ -25,6 +25,7 @@ import { ToastProvider } from '@/components/ui/toast';
 import { Avatar } from '@/components/ui/misc';
 import { ChangePasswordDialog } from '@/components/ChangePasswordDialog';
 import { SessionsDialog } from '@/components/SessionsDialog';
+import { NotificationBell } from '@/components/NotificationBell';
 
 export function PageHeader({
   title,
@@ -282,7 +283,8 @@ export default function DashboardLayout() {
               <img src="/logo.png" alt="" className="h-7 w-7 object-contain" />
               <span className="font-bold text-gray-900">Money Bank FX</span>
             </div>
-            <div className="ml-auto">
+            <div className="ml-auto flex items-center gap-1">
+              <NotificationBell />
               <UserMenu />
             </div>
           </header>

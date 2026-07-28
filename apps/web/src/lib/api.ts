@@ -16,6 +16,7 @@ export type Platform = 'MT4' | 'MT5';
 export type AccountStatus = 'PROVISIONING' | 'CONNECTED' | 'DISCONNECTED' | 'ERROR';
 export type ReceiverStatus = 'ACTIVE' | 'PAUSED' | 'ERROR';
 export type SizingMode = 'FIXED_LOT' | 'MULTIPLIER' | 'BALANCE_RATIO';
+export type SymbolFilterMode = 'NONE' | 'INCLUDE' | 'EXCLUDE';
 export type Side = 'BUY' | 'SELL';
 export type CopyAction = 'OPEN' | 'CLOSE' | 'MODIFY';
 export type CopyStatus = 'SUCCESS' | 'FAILED' | 'FILTERED';
@@ -44,6 +45,7 @@ export interface AccountMini {
   server: string;
   platform: Platform;
   status: AccountStatus;
+  marginMode: string | null;
 }
 
 export interface Account {
@@ -54,6 +56,7 @@ export interface Account {
   server: string;
   platform: Platform;
   status: AccountStatus;
+  marginMode: string | null;
   createdById: string;
   createdAt: string;
   updatedAt: string;
@@ -76,6 +79,12 @@ export interface Subscription {
   copyTp: boolean;
   reverse: boolean;
   symbolMapping: SymbolMap[] | null;
+  symbolFilterMode: SymbolFilterMode;
+  symbolFilterList: string[];
+  minVolume: number | null;
+  maxVolume: number | null;
+  tradeWindowStart: number | null;
+  tradeWindowEnd: number | null;
   enabled: boolean;
   status: ReceiverStatus;
   createdAt: string;
@@ -294,9 +303,24 @@ export interface CreateAccountInput {
   server: string;
   platform: Platform;
 }
+export interface OpenPosition {
+  id: string;
+  symbol: string;
+  type: 'BUY' | 'SELL';
+  volume: number;
+  openPrice: number;
+  currentPrice: number | null;
+  stopLoss: number | null;
+  takeProfit: number | null;
+  swap: number;
+  profit: number;
+  time: string | null;
+}
+
 export const accountsApi = {
   list: () => apiFetch<Account[]>('/accounts'),
   get: (id: string) => apiFetch<Account>(`/accounts/${id}`),
+  positions: (id: string) => apiFetch<OpenPosition[]>(`/accounts/${id}/positions`),
   create: (body: CreateAccountInput) =>
     apiFetch<Account>('/accounts', { method: 'POST', body: JSON.stringify(body) }),
   rename: (id: string, label: string) =>
@@ -323,6 +347,12 @@ export interface ReceiverRules {
   copyTp?: boolean;
   reverse?: boolean;
   symbolMapping?: SymbolMap[];
+  symbolFilterMode?: SymbolFilterMode;
+  symbolFilterList?: string[];
+  minVolume?: number | null;
+  maxVolume?: number | null;
+  tradeWindowStart?: number | null;
+  tradeWindowEnd?: number | null;
 }
 export const copierApi = {
   list: () => apiFetch<CopierConfig[]>('/copiers'),
@@ -528,6 +558,26 @@ export const auditApi = {
     Object.entries(q).forEach(([k, v]) => v != null && v !== '' && p.set(k, String(v)));
     return apiFetch<{ items: AuditLog[]; total: number }>(`/audit-logs?${p.toString()}`);
   },
+};
+
+// ---------------------------------------------------------------------------
+// In-app notifications (bell)
+// ---------------------------------------------------------------------------
+export type NotificationType = 'COPY_FAILED' | 'ACCOUNT_OFFLINE' | 'ACCOUNT_ONLINE' | 'INFO';
+export interface Notification {
+  id: string;
+  type: NotificationType;
+  title: string;
+  body: string | null;
+  meta: unknown;
+  readAt: string | null;
+  createdAt: string;
+}
+export const notificationsApi = {
+  list: () => apiFetch<Notification[]>('/notifications'),
+  unreadCount: () => apiFetch<{ count: number }>('/notifications/unread-count'),
+  markRead: (id: string) => apiFetch<void>(`/notifications/${id}/read`, { method: 'POST' }),
+  markAllRead: () => apiFetch<void>('/notifications/read-all', { method: 'POST' }),
 };
 
 export interface RuntimeInfo {

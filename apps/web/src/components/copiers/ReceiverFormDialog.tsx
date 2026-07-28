@@ -10,6 +10,7 @@ import {
   type CopierConfigDetail,
   type SizingMode,
   type Subscription,
+  type SymbolFilterMode,
   type SymbolMap,
 } from '@/lib/api';
 
@@ -21,6 +22,13 @@ interface FormState {
   copyTp: boolean;
   reverse: boolean;
   mapping: string;
+  filterMode: SymbolFilterMode;
+  filterList: string;
+  minVolume: string;
+  maxVolume: string;
+  windowEnabled: boolean;
+  windowStart: string; // HH:MM UTC
+  windowEnd: string; // HH:MM UTC
 }
 
 const defaults: FormState = {
@@ -31,6 +39,25 @@ const defaults: FormState = {
   copyTp: true,
   reverse: false,
   mapping: '',
+  filterMode: 'NONE',
+  filterList: '',
+  minVolume: '',
+  maxVolume: '',
+  windowEnabled: false,
+  windowStart: '00:00',
+  windowEnd: '23:59',
+};
+
+const minToHHMM = (m: number | null): string => {
+  if (m == null) return '';
+  const h = Math.floor(m / 60);
+  const mm = m % 60;
+  return `${String(h).padStart(2, '0')}:${String(mm).padStart(2, '0')}`;
+};
+const hhmmToMin = (s: string): number | null => {
+  const [h, m] = s.split(':').map(Number);
+  if (!Number.isFinite(h) || !Number.isFinite(m)) return null;
+  return h * 60 + m;
 };
 
 function formatMapping(mapping: SymbolMap[] | null): string {
@@ -78,6 +105,7 @@ export function ReceiverFormDialog({
     if (!open) return;
     setError(null);
     if (subscription) {
+      const hasWindow = subscription.tradeWindowStart != null && subscription.tradeWindowEnd != null;
       setForm({
         receiverAccountId: subscription.receiverAccountId,
         sizingMode: subscription.sizingMode,
@@ -86,6 +114,13 @@ export function ReceiverFormDialog({
         copyTp: subscription.copyTp,
         reverse: subscription.reverse,
         mapping: formatMapping(subscription.symbolMapping),
+        filterMode: subscription.symbolFilterMode,
+        filterList: (subscription.symbolFilterList ?? []).join(', '),
+        minVolume: subscription.minVolume != null ? String(subscription.minVolume) : '',
+        maxVolume: subscription.maxVolume != null ? String(subscription.maxVolume) : '',
+        windowEnabled: hasWindow,
+        windowStart: hasWindow ? minToHHMM(subscription.tradeWindowStart) : '00:00',
+        windowEnd: hasWindow ? minToHHMM(subscription.tradeWindowEnd) : '23:59',
       });
     } else {
       setForm(defaults);
@@ -106,6 +141,31 @@ export function ReceiverFormDialog({
     if (!Number.isFinite(multiplier) || multiplier <= 0)
       return setError('Multiplier must be a positive number.');
 
+    const minVolume = form.minVolume.trim() ? Number(form.minVolume) : undefined;
+    const maxVolume = form.maxVolume.trim() ? Number(form.maxVolume) : undefined;
+    if (minVolume != null && (!Number.isFinite(minVolume) || minVolume <= 0))
+      return setError('Min volume must be a positive number.');
+    if (maxVolume != null && (!Number.isFinite(maxVolume) || maxVolume <= 0))
+      return setError('Max volume must be a positive number.');
+    if (minVolume != null && maxVolume != null && minVolume > maxVolume)
+      return setError('Min volume cannot exceed max volume.');
+
+    let tradeWindowStart: number | undefined;
+    let tradeWindowEnd: number | undefined;
+    if (form.windowEnabled) {
+      const s = hhmmToMin(form.windowStart);
+      const e = hhmmToMin(form.windowEnd);
+      if (s == null || e == null) return setError('Enter a valid trading window (HH:MM).');
+      if (s === e) return setError('Trading window start and end cannot be the same.');
+      tradeWindowStart = s;
+      tradeWindowEnd = e;
+    }
+
+    const filterSymbols = form.filterList
+      .split(',')
+      .map((s) => s.trim().toUpperCase())
+      .filter(Boolean);
+
     const rules = {
       sizingMode: form.sizingMode,
       multiplier,
@@ -113,6 +173,16 @@ export function ReceiverFormDialog({
       copyTp: form.copyTp,
       reverse: form.reverse,
       symbolMapping: parseMapping(form.mapping),
+      symbolFilterMode: form.filterMode,
+      symbolFilterList: form.filterMode === 'NONE' ? [] : filterSymbols,
+      // On edit, an empty field clears the value (null); on add, omit it.
+      minVolume: minVolume ?? (isEdit ? null : undefined),
+      maxVolume: maxVolume ?? (isEdit ? null : undefined),
+      ...(form.windowEnabled
+        ? { tradeWindowStart, tradeWindowEnd }
+        : isEdit
+          ? { tradeWindowStart: null, tradeWindowEnd: null }
+          : {}),
     };
 
     setLoading(true);
@@ -206,6 +276,69 @@ export function ReceiverFormDialog({
               <Input value={form.mapping} onChange={(e) => set('mapping', e.target.value)} placeholder="EURUSD=EURUSD.r" />
             </Field>
           </div>
+        </div>
+
+        {/* Trade filters */}
+        <div className="rounded-lg border border-gray-100 bg-gray-50/60 p-4">
+          <div className="mb-3 text-sm font-semibold text-gray-700">Trade Filters</div>
+          <div className="grid grid-cols-2 gap-4">
+            <Field label="Symbol filter">
+              <Select
+                value={form.filterMode}
+                onChange={(e) => set('filterMode', e.target.value as SymbolFilterMode)}
+              >
+                <option value="NONE">Copy all symbols</option>
+                <option value="INCLUDE">Whitelist (only these)</option>
+                <option value="EXCLUDE">Blacklist (all except)</option>
+              </Select>
+            </Field>
+            <Field
+              label="Symbols"
+              hint={form.filterMode === 'NONE' ? 'Disabled while copying all' : 'Comma-separated, e.g. XAUUSD, EURUSD'}
+            >
+              <Input
+                value={form.filterList}
+                onChange={(e) => set('filterList', e.target.value)}
+                placeholder="XAUUSD, EURUSD"
+                disabled={form.filterMode === 'NONE'}
+              />
+            </Field>
+          </div>
+          <div className="mt-4 grid grid-cols-2 gap-4">
+            <Field label="Min volume (lots)" hint="Skip smaller trades. Blank = no minimum.">
+              <Input type="number" step="0.01" min="0" value={form.minVolume}
+                onChange={(e) => set('minVolume', e.target.value)} placeholder="e.g. 0.01" />
+            </Field>
+            <Field label="Max volume (lots)" hint="Cap copied lot size. Blank = no cap.">
+              <Input type="number" step="0.01" min="0" value={form.maxVolume}
+                onChange={(e) => set('maxVolume', e.target.value)} placeholder="e.g. 1.00" />
+            </Field>
+          </div>
+        </div>
+
+        {/* Trading-hours window */}
+        <div className="rounded-lg border border-gray-100 bg-gray-50/60 p-4">
+          <ToggleRow
+            label="Trading-hours window (UTC)"
+            checked={form.windowEnabled}
+            onChange={(v) => set('windowEnabled', v)}
+          />
+          {form.windowEnabled && (
+            <>
+              <div className="mt-3 grid grid-cols-2 gap-4">
+                <Field label="Open (UTC)">
+                  <Input type="time" value={form.windowStart} onChange={(e) => set('windowStart', e.target.value)} />
+                </Field>
+                <Field label="Close (UTC)">
+                  <Input type="time" value={form.windowEnd} onChange={(e) => set('windowEnd', e.target.value)} />
+                </Field>
+              </div>
+              <p className="mt-2 text-xs text-gray-500">
+                New copied trades open only inside this window. Overnight windows (e.g. 22:00→06:00) are supported.
+                Existing trades are not force-closed.
+              </p>
+            </>
+          )}
         </div>
 
         {error && <p className="text-sm text-red-600">{error}</p>}
